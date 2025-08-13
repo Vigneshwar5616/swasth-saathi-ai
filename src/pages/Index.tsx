@@ -2,7 +2,6 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
-import { Input } from "@/components/ui/input";
 import { useToast } from "@/hooks/use-toast";
 import { ChatMessage } from "@/components/chat/ChatMessage";
 import LanguageSelector from "@/components/chat/LanguageSelector";
@@ -14,14 +13,13 @@ const Index = () => {
   const [language, setLanguage] = useState<string>("en-IN");
   const [messages, setMessages] = useState<Message[]>([{
     role: "assistant",
-    content: "Welcome! I’m ArogyaAI. I can provide reliable health information in many Indian languages. How can I help today? (I do not provide diagnoses.)",
+    content: "Welcome! I'm ArogyaAI. I can provide reliable health information in many Indian languages. How can I help today? (I do not provide diagnoses.)",
   }]);
   const [input, setInput] = useState("");
   const [loading, setLoading] = useState(false);
   const [voice, setVoice] = useState(true);
   const recognitionRef = useRef<SpeechRecognition | null>(null);
   const { toast } = useToast();
-  const [perplexityKey, setPerplexityKey] = useState("");
 
   // Setup Web Speech voices
   const synth = window.speechSynthesis;
@@ -52,7 +50,7 @@ const Index = () => {
     try {
       const SR = (window as any).webkitSpeechRecognition || (window as any).SpeechRecognition;
       if (!SR) {
-        toast({ title: "Speech not supported", description: "Your browser doesn’t support speech recognition." });
+        toast({ title: "Speech not supported", description: "Your browser doesn't support speech recognition." });
         return;
       }
       const rec: SpeechRecognition = new SR();
@@ -65,7 +63,7 @@ const Index = () => {
         if (transcript) setInput(transcript);
       };
       rec.onerror = () => {
-        toast({ title: "Mic error", description: "Couldn’t capture audio. Check permissions." });
+        toast({ title: "Mic error", description: "Couldn't capture audio. Check permissions." });
       };
       rec.start();
     } catch (e) {
@@ -81,41 +79,20 @@ const Index = () => {
     setInput("");
     setLoading(true);
     try {
-      if (!perplexityKey) {
-        toast({ title: "API key required", description: "Please paste your Perplexity API key in Settings." });
-        setLoading(false);
-        return;
-      }
-
-      const systemPrompt = `You are ArogyaAI, a multilingual health information assistant for India.\n\nGuidelines:\n- Answer ONLY with reliable, publicly verifiable health information.\n- Do NOT provide diagnosis or treatment plans. Encourage professional consultation.\n- Use clear, empathetic, culturally aware language for diverse Indian audiences.\n- Prefer explanations in the user's selected language (${language}).\n- If unsure, say you don't know and suggest trusted sources (WHO, MoHFW, NIH).`;
-
-      const finalMessages = [
-        { role: "system", content: systemPrompt },
-        ...next,
-      ];
-
-      const resp = await fetch("https://api.perplexity.ai/chat/completions", {
+      const resp = await fetch("/functions/v1/health-chat", {
         method: "POST",
         headers: {
-          Authorization: `Bearer ${perplexityKey}`,
           "Content-Type": "application/json",
         },
         body: JSON.stringify({
-          model: "llama-3.1-sonar-small-128k-online",
-          messages: finalMessages,
-          temperature: 0.2,
-          top_p: 0.9,
-          max_tokens: 800,
-          return_images: false,
-          return_related_questions: false,
-          frequency_penalty: 0.5,
-          presence_penalty: 0,
+          messages: next,
+          language: language,
         }),
       });
 
       if (!resp.ok) throw new Error(await resp.text());
       const data = await resp.json();
-      const reply = data?.choices?.[0]?.message?.content || "I’m sorry, I couldn’t get an answer right now.";
+      const reply = data?.choices?.[0]?.message?.content || "I'm sorry, I couldn't get an answer right now.";
       setMessages((curr) => [...curr, { role: "assistant", content: reply }]);
       speak(reply);
     } catch (e: any) {
@@ -149,17 +126,6 @@ const Index = () => {
                 <LanguageSelector value={language} onChange={setLanguage} />
               </div>
               <VoiceToggle enabled={voice} onChange={setVoice} />
-              <div className="space-y-2">
-                <span className="text-sm font-medium">Perplexity API key</span>
-                <Input
-                  type="password"
-                  value={perplexityKey}
-                  onChange={(e) => setPerplexityKey(e.target.value)}
-                  placeholder="Paste your key (temporary)"
-                  aria-label="Perplexity API key"
-                />
-                <p className="text-[11px] text-muted-foreground">Used locally to fetch answers. We recommend storing it as a Supabase secret later.</p>
-              </div>
               <p className="text-xs text-muted-foreground">Disclaimer: Educational purposes only. Always consult a qualified healthcare professional.</p>
             </CardContent>
           </Card>
