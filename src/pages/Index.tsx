@@ -19,6 +19,7 @@ const Index = () => {
   const [loading, setLoading] = useState(false);
   const [voice, setVoice] = useState(true);
   const [isListening, setIsListening] = useState(false);
+  const [apiKey, setApiKey] = useState("");
   const recognitionRef = useRef<SpeechRecognition | null>(null);
   const { toast } = useToast();
 
@@ -127,6 +128,7 @@ const Index = () => {
         body: JSON.stringify({
           messages: next,
           language: language,
+          apiKey: apiKey || undefined,
         }),
       });
 
@@ -166,6 +168,17 @@ const Index = () => {
                 <LanguageSelector value={language} onChange={setLanguage} />
               </div>
               <VoiceToggle enabled={voice} onChange={setVoice} />
+              <div className="space-y-2">
+                <span className="text-sm font-medium">API Key (Temporary)</span>
+                <input
+                  type="password"
+                  value={apiKey}
+                  onChange={(e) => setApiKey(e.target.value)}
+                  placeholder="Enter Perplexity API key..."
+                  className="w-full px-3 py-2 text-sm border rounded-md"
+                />
+                <p className="text-xs text-muted-foreground">⚠️ For testing only. Set up properly in Supabase secrets for production.</p>
+              </div>
               <p className="text-xs text-muted-foreground">Disclaimer: Educational purposes only. Always consult a qualified healthcare professional.</p>
             </CardContent>
           </Card>
