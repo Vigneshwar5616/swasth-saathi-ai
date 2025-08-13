@@ -18,6 +18,7 @@ const Index = () => {
   const [input, setInput] = useState("");
   const [loading, setLoading] = useState(false);
   const [voice, setVoice] = useState(true);
+  const [isListening, setIsListening] = useState(false);
   const recognitionRef = useRef<SpeechRecognition | null>(null);
   const { toast } = useToast();
 
@@ -47,26 +48,65 @@ const Index = () => {
   };
 
   const handleMic = async () => {
+    if (isListening) {
+      // Stop listening
+      if (recognitionRef.current) {
+        recognitionRef.current.stop();
+        setIsListening(false);
+      }
+      return;
+    }
+
     try {
       const SR = (window as any).webkitSpeechRecognition || (window as any).SpeechRecognition;
       if (!SR) {
         toast({ title: "Speech not supported", description: "Your browser doesn't support speech recognition." });
         return;
       }
-      const rec: SpeechRecognition = new SR();
+      
+      const rec: any = new SR();
       recognitionRef.current = rec;
       rec.lang = language;
-      rec.interimResults = false;
+      rec.interimResults = true;
       rec.maxAlternatives = 1;
+      rec.continuous = false;
+      
+      rec.onstart = () => {
+        setIsListening(true);
+        toast({ title: "Listening...", description: "Speak now, I'm listening!" });
+      };
+      
       rec.onresult = (e: SpeechRecognitionEvent) => {
         const transcript = e.results?.[0]?.[0]?.transcript;
-        if (transcript) setInput(transcript);
+        if (transcript) {
+          setInput(transcript);
+          if (e.results?.[0]?.isFinal) {
+            setIsListening(false);
+          }
+        }
       };
-      rec.onerror = () => {
-        toast({ title: "Mic error", description: "Couldn't capture audio. Check permissions." });
+      
+      rec.onerror = (event: any) => {
+        setIsListening(false);
+        console.error("Speech recognition error:", event.error);
+        let errorMessage = "Couldn't capture audio. Check permissions.";
+        if (event.error === 'not-allowed') {
+          errorMessage = "Microphone access denied. Please allow microphone permissions.";
+        } else if (event.error === 'no-speech') {
+          errorMessage = "No speech detected. Please try again.";
+        } else if (event.error === 'network') {
+          errorMessage = "Network error. Check your internet connection.";
+        }
+        toast({ title: "Mic error", description: errorMessage });
       };
+      
+      rec.onend = () => {
+        setIsListening(false);
+      };
+      
       rec.start();
     } catch (e) {
+      setIsListening(false);
       toast({ title: "Mic error", description: String(e) });
     }
   };
@@ -79,7 +119,7 @@ const Index = () => {
     setInput("");
     setLoading(true);
     try {
-      const resp = await fetch("/functions/v1/health-chat", {
+      const resp = await fetch("/supabase/functions/v1/health-chat", {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
@@ -151,7 +191,16 @@ const Index = () => {
                   aria-label="Your message"
                 />
                 <div className="flex gap-2 justify-end">
-                  <Button variant="secondary" onClick={handleMic} type="button" aria-label="Use microphone">🎙️ Speak</Button>
+                  <Button 
+                    variant="secondary" 
+                    onClick={handleMic} 
+                    type="button" 
+                    aria-label="Use microphone"
+                    className={isListening ? "bg-red-500 hover:bg-red-600 text-white" : ""}
+                    disabled={loading}
+                  >
+                    {isListening ? "🔴 Stop" : "🎙️ Speak"}
+                  </Button>
                   <Button onClick={send} disabled={loading} aria-label="Send message">
                     {loading ? "Sending…" : "Send"}
                   </Button>
