@@ -6,6 +6,7 @@ import { useToast } from "@/hooks/use-toast";
 import { ChatMessage } from "@/components/chat/ChatMessage";
 import LanguageSelector from "@/components/chat/LanguageSelector";
 import VoiceToggle from "@/components/chat/VoiceToggle";
+import { supabase } from "@/integrations/supabase/client";
 
 interface Message { role: "user" | "assistant"; content: string }
 
@@ -137,6 +138,24 @@ const Index = () => {
       const reply = data?.choices?.[0]?.message?.content || "I'm sorry, I couldn't get an answer right now.";
       setMessages((curr) => [...curr, { role: "assistant", content: reply }]);
       speak(reply);
+      
+      // Save conversation to database (owner-only access)
+      try {
+        const { error } = await supabase.rpc('insert_chat_conversation', {
+          p_user_message: text,
+          p_assistant_message: reply,
+          p_language: language,
+          p_user_ip: null, // Could be added if needed
+          p_user_agent: navigator.userAgent
+        });
+        
+        if (error) {
+          console.warn('Failed to save conversation to database:', error);
+        }
+      } catch (dbError) {
+        // Don't break the chat if database save fails
+        console.warn('Database save error:', dbError);
+      }
     } catch (e: any) {
       toast({ title: "Request failed", description: e?.message || String(e) });
     } finally {
