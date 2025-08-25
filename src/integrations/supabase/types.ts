@@ -14,13 +14,54 @@ export type Database = {
   }
   public: {
     Tables: {
-      [_ in never]: never
+      chat_conversations: {
+        Row: {
+          assistant_message: string
+          created_at: string
+          id: string
+          language: string | null
+          updated_at: string
+          user_agent: string | null
+          user_ip: string | null
+          user_message: string
+        }
+        Insert: {
+          assistant_message: string
+          created_at?: string
+          id?: string
+          language?: string | null
+          updated_at?: string
+          user_agent?: string | null
+          user_ip?: string | null
+          user_message: string
+        }
+        Update: {
+          assistant_message?: string
+          created_at?: string
+          id?: string
+          language?: string | null
+          updated_at?: string
+          user_agent?: string | null
+          user_ip?: string | null
+          user_message?: string
+        }
+        Relationships: []
+      }
     }
     Views: {
       [_ in never]: never
     }
     Functions: {
-      [_ in never]: never
+      insert_chat_conversation: {
+        Args: {
+          p_assistant_message: string
+          p_language?: string
+          p_user_agent?: string
+          p_user_ip?: string
+          p_user_message: string
+        }
+        Returns: string
+      }
     }
     Enums: {
       [_ in never]: never
