@@ -1,9 +1,14 @@
 import { useEffect, useMemo, useRef, useState } from "react";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { useToast } from "@/hooks/use-toast";
+import { Mic, Send, Loader2 } from "lucide-react";
 import { ChatMessage } from "@/components/chat/ChatMessage";
+import { AppSidebar } from "@/components/layout/AppSidebar";
+import { DashboardHeader } from "@/components/dashboard/DashboardHeader";
+import { QuickActions } from "@/components/dashboard/QuickActions";
 import LanguageSelector from "@/components/chat/LanguageSelector";
 import VoiceToggle from "@/components/chat/VoiceToggle";
 import { supabase } from "@/integrations/supabase/client";
@@ -12,15 +17,14 @@ interface Message { role: "user" | "assistant"; content: string }
 
 const Index = () => {
   const [language, setLanguage] = useState<string>("en-IN");
-  const [messages, setMessages] = useState<Message[]>([{
-    role: "assistant",
-    content: "Welcome! I'm ArogyaAI. I can provide reliable health information in many Indian languages. How can I help today? (I do not provide diagnoses.)",
-  }]);
+  const [messages, setMessages] = useState<Message[]>([]);
   const [input, setInput] = useState("");
   const [loading, setLoading] = useState(false);
   const [voice, setVoice] = useState(true);
   const [isListening, setIsListening] = useState(false);
-  const [apiKey, setApiKey] = useState("");
+  const [apiKey, setApiKey] = useState(() => localStorage.getItem("apiKey") || "");
+  const [searchQuery, setSearchQuery] = useState("");
+  
   const recognitionRef = useRef<SpeechRecognition | null>(null);
   const { toast } = useToast();
 
@@ -163,97 +167,173 @@ const Index = () => {
     }
   };
 
+  const handleQuickAction = (action: string) => {
+    const actionPrompts = {
+      "Check Symptoms": "I would like to check my symptoms. Can you help me describe what I'm experiencing?",
+      "Heart Health": "I want to learn about heart health and cardiovascular wellness.",
+      "Mental Health": "I need information about mental health and emotional wellbeing.",
+      "Medications": "I have questions about medications and their effects.",
+      "Book Appointment": "I need help understanding when I should book a medical appointment.",
+      "Emergency Info": "I need to know about emergency medical situations and when to seek immediate help."
+    };
+    
+    const prompt = actionPrompts[action as keyof typeof actionPrompts];
+    if (prompt) {
+      setInput(prompt);
+    }
+  };
+
   return (
-    <main className="min-h-screen bg-gradient-to-b from-background to-muted/50">
-      <header className="relative overflow-hidden">
-        <div className="pointer-events-none absolute inset-0 opacity-60" style={{ background: "var(--gradient-primary)" }} />
-        <div className="container relative py-16 md:py-24">
-          <div className="max-w-3xl mx-auto text-center text-primary-foreground md:text-white">
-            <h1 className="text-3xl md:text-5xl font-bold tracking-tight">ArogyaAI – Multilingual Health Chatbot</h1>
-            <p className="mt-4 text-base md:text-lg opacity-90">Reliable health information in your language. Voice and text across major Indian languages. No medical diagnosis.</p>
-          </div>
-        </div>
-      </header>
+    <div className="flex h-screen w-full">
+      <script
+        type="application/ld+json"
+        suppressHydrationWarning
+        dangerouslySetInnerHTML={{
+          __html: JSON.stringify({
+            "@context": "https://schema.org",
+            "@type": "FAQPage",
+            name: "Healthcare AI Dashboard",
+            description: "Comprehensive AI-powered health assistant dashboard providing information in multiple languages",
+            mainEntity: [
+              {
+                "@type": "Question",
+                name: "How can I get health information in my language?",
+                acceptedAnswer: {
+                  "@type": "Answer",
+                  text: "Our AI health assistant supports multiple languages. Simply select your preferred language and ask your health-related questions."
+                }
+              },
+              {
+                "@type": "Question", 
+                name: "Is this chatbot a replacement for medical advice?",
+                acceptedAnswer: {
+                  "@type": "Answer",
+                  text: "No, this AI assistant provides general health information only. Always consult healthcare professionals for medical advice."
+                }
+              }
+            ]
+          })
+        }}
+      />
 
-      <section className="container py-8 md:py-12">
-        <div className="grid gap-6 md:grid-cols-[320px_1fr]">
-          <Card className="h-max border shadow-[var(--shadow-soft)]">
-            <CardHeader>
-              <CardTitle>Settings</CardTitle>
-            </CardHeader>
-            <CardContent className="space-y-4">
-              <div className="space-y-2">
-                <span className="text-sm font-medium">Language</span>
-                <LanguageSelector value={language} onChange={setLanguage} />
-              </div>
-              <VoiceToggle enabled={voice} onChange={setVoice} />
-              <div className="space-y-2">
-                <span className="text-sm font-medium">API Key (Temporary)</span>
-                <input
-                  type="password"
-                  value={apiKey}
-                  onChange={(e) => setApiKey(e.target.value)}
-                  placeholder="Enter Perplexity API key..."
-                  className="w-full px-3 py-2 text-sm border rounded-md"
-                />
-                <p className="text-xs text-muted-foreground">⚠️ For testing only. Set up properly in Supabase secrets for production.</p>
-              </div>
-              <p className="text-xs text-muted-foreground">Disclaimer: Educational purposes only. Always consult a qualified healthcare professional.</p>
-            </CardContent>
-          </Card>
+      <AppSidebar />
+      
+      <div className="flex-1 flex flex-col">
+        <DashboardHeader 
+          searchQuery={searchQuery}
+          onSearchChange={setSearchQuery}
+        />
+        
+        <main className="flex-1 overflow-auto">
+          <div className="container mx-auto p-6 space-y-8">
+            <section className="space-y-6">
+              <QuickActions onActionClick={handleQuickAction} />
+            </section>
 
-          <Card className="border shadow-[var(--shadow-elevated)]">
-            <CardHeader className="pb-2">
-              <CardTitle>Chat</CardTitle>
-            </CardHeader>
-            <CardContent>
-              <div className="h-[48vh] md:h-[56vh] overflow-y-auto pr-1 space-y-4" aria-label="Chat transcript">
-                {messages.map((m, i) => (
-                  <ChatMessage key={i} role={m.role} content={m.content} />
-                ))}
-                {loading && <div className="text-sm text-muted-foreground">Thinking…</div>}
-              </div>
-
-              <div className="mt-4 grid gap-3">
-                <Textarea
-                  value={input}
-                  onChange={(e) => setInput(e.target.value)}
-                  placeholder="Ask in your language…"
-                  className="min-h-[96px]"
-                  aria-label="Your message"
-                />
-                <div className="flex gap-2 justify-end">
-                  <Button 
-                    variant="secondary" 
-                    onClick={handleMic} 
-                    type="button" 
-                    aria-label="Use microphone"
-                    className={isListening ? "bg-red-500 hover:bg-red-600 text-white" : ""}
-                    disabled={loading}
-                  >
-                    {isListening ? "🔴 Stop" : "🎙️ Speak"}
-                  </Button>
-                  <Button onClick={send} disabled={loading} aria-label="Send message">
-                    {loading ? "Sending…" : "Send"}
-                  </Button>
+            <section className="space-y-4">
+              <div className="flex items-center justify-between">
+                <h2 className="text-lg font-semibold">HealthAI Assistant</h2>
+                <div className="flex items-center gap-2 text-sm text-muted-foreground">
+                  <span className="inline-block w-2 h-2 bg-green-500 rounded-full"></span>
+                  <span>{new Date().toLocaleTimeString()}</span>
+                  <span className="text-primary font-medium">100% confident</span>
                 </div>
               </div>
-            </CardContent>
-          </Card>
-        </div>
-      </section>
 
-      <section className="container py-8">
-        <script type="application/ld+json" suppressHydrationWarning dangerouslySetInnerHTML={{ __html: JSON.stringify({
-          "@context": "https://schema.org",
-          "@type": "FAQPage",
-          "mainEntity": [
-            { "@type": "Question", "name": "Does ArogyaAI provide medical advice?", "acceptedAnswer": { "@type": "Answer", "text": "No. It provides general health information only and encourages consulting qualified professionals." } },
-            { "@type": "Question", "name": "Which languages are supported?", "acceptedAnswer": { "@type": "Answer", "text": "English (India), Hindi, Bengali, Telugu, Marathi, Tamil, Gujarati, Urdu, Kannada, Malayalam, Punjabi, Odia, and more (text). Voice support depends on your device/browser voices." } }
-          ]
-        }) }} />
-      </section>
-    </main>
+              <Card className="h-80 overflow-y-auto bg-card">
+                <CardContent className="p-4 space-y-4">
+                  {messages.length === 0 && (
+                    <div className="flex items-center gap-3 p-4 bg-primary/5 rounded-lg">
+                      <div className="w-8 h-8 rounded-full bg-primary flex items-center justify-center">
+                        <span className="text-xs font-medium text-primary-foreground">AI</span>
+                      </div>
+                      <div className="text-sm text-foreground">
+                        Hello! I'm your AI Health Assistant. I'm here to help you with health information, symptom guidance, and general wellness questions. Sign in to save your chat history. How can I assist you today?
+                      </div>
+                    </div>
+                  )}
+                  {messages.map((msg, i) => (
+                    <ChatMessage key={i} role={msg.role} content={msg.content} />
+                  ))}
+                  {loading && (
+                    <div className="flex justify-center py-4">
+                      <Loader2 className="h-6 w-6 animate-spin text-primary" />
+                    </div>
+                  )}
+                </CardContent>
+              </Card>
+
+              <div className="space-y-4">
+                <div className="flex flex-wrap gap-4 justify-between items-center">
+                  <div className="flex gap-4">
+                    <LanguageSelector value={language} onChange={setLanguage} />
+                    <VoiceToggle enabled={voice} onChange={setVoice} />
+                  </div>
+                  
+                  <div className="max-w-sm">
+                    <Input
+                      type="password"
+                      placeholder="OpenAI API Key"
+                      value={apiKey}
+                      onChange={(e) => {
+                        setApiKey(e.target.value);
+                        localStorage.setItem("apiKey", e.target.value);
+                      }}
+                      className="text-sm"
+                    />
+                  </div>
+                </div>
+
+                <div className="space-y-2">
+                  <div className="flex items-center gap-2">
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={handleMic}
+                      disabled={loading}
+                      className={`${isListening ? "bg-red-100 border-red-300 text-red-600" : "bg-primary text-primary-foreground hover:bg-primary/90"}`}
+                    >
+                      <Mic className="h-4 w-4 mr-1" />
+                      Voice Input
+                    </Button>
+                  </div>
+                  
+                  <div className="flex gap-2">
+                    <Textarea
+                      value={input}
+                      onChange={(e) => setInput(e.target.value)}
+                      placeholder="Type your health question here..."
+                      className="flex-1 resize-none"
+                      rows={3}
+                      onKeyDown={(e) => {
+                        if (e.key === "Enter" && !e.shiftKey) {
+                          e.preventDefault();
+                          if (!loading) send();
+                        }
+                      }}
+                      disabled={loading}
+                      aria-label="Health question input"
+                    />
+                    <Button
+                      onClick={send}
+                      disabled={loading || !input.trim()}
+                      aria-label="Send message"
+                      className="bg-primary hover:bg-primary/90 h-auto px-6"
+                    >
+                      <Send className="h-4 w-4" />
+                    </Button>
+                  </div>
+                </div>
+
+                <p className="text-xs text-muted-foreground text-center">
+                  This AI assistant provides general health information only. Always consult healthcare professionals for medical advice. Sign in to save your chat history.
+                </p>
+              </div>
+            </section>
+          </div>
+        </main>
+      </div>
+    </div>
   );
 };
 
