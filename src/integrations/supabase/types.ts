@@ -47,6 +47,21 @@ export type Database = {
         }
         Relationships: []
       }
+      kv_store_fde062b7: {
+        Row: {
+          key: string
+          value: Json
+        }
+        Insert: {
+          key: string
+          value: Json
+        }
+        Update: {
+          key?: string
+          value?: Json
+        }
+        Relationships: []
+      }
     }
     Views: {
       [_ in never]: never

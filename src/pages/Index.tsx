@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
+
 import { Textarea } from "@/components/ui/textarea";
 import { useToast } from "@/hooks/use-toast";
 import { Mic, Send, Loader2 } from "lucide-react";
@@ -22,7 +22,7 @@ const Index = () => {
   const [loading, setLoading] = useState(false);
   const [voice, setVoice] = useState(true);
   const [isListening, setIsListening] = useState(false);
-  const [apiKey, setApiKey] = useState(() => localStorage.getItem("apiKey") || "");
+  
   const [searchQuery, setSearchQuery] = useState("");
   
   const recognitionRef = useRef<SpeechRecognition | null>(null);
@@ -133,7 +133,6 @@ const Index = () => {
         body: JSON.stringify({
           messages: next,
           language: language,
-          apiKey: apiKey || undefined,
         }),
       });
 
@@ -264,24 +263,9 @@ const Index = () => {
               </Card>
 
               <div className="space-y-4">
-                <div className="flex flex-wrap gap-4 justify-between items-center">
-                  <div className="flex gap-4">
-                    <LanguageSelector value={language} onChange={setLanguage} />
-                    <VoiceToggle enabled={voice} onChange={setVoice} />
-                  </div>
-                  
-                  <div className="max-w-sm">
-                    <Input
-                      type="password"
-                      placeholder="OpenAI API Key"
-                      value={apiKey}
-                      onChange={(e) => {
-                        setApiKey(e.target.value);
-                        localStorage.setItem("apiKey", e.target.value);
-                      }}
-                      className="text-sm"
-                    />
-                  </div>
+                <div className="flex gap-4">
+                  <LanguageSelector value={language} onChange={setLanguage} />
+                  <VoiceToggle enabled={voice} onChange={setVoice} />
                 </div>
 
                 <div className="space-y-2">
