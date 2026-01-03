@@ -1,10 +1,6 @@
 import { 
   MessageCircle, 
   History, 
-  FileText, 
-  Activity, 
-  Calendar, 
-  BarChart3, 
   Settings, 
   HelpCircle,
   Heart
@@ -26,10 +22,6 @@ import { cn } from "@/lib/utils";
 const navigationItems = [
   { title: "Chat", url: "/", icon: MessageCircle },
   { title: "History", url: "/history", icon: History },
-  { title: "Health Records", url: "/records", icon: FileText },
-  { title: "Vitals", url: "/vitals", icon: Activity },
-  { title: "Appointments", url: "/appointments", icon: Calendar },
-  { title: "Reports", url: "/reports", icon: BarChart3 },
 ];
 
 const footerItems = [
