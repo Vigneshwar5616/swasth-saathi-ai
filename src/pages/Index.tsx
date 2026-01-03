@@ -239,7 +239,7 @@ const Index = () => {
                 </div>
               </div>
 
-              <Card className="h-80 overflow-y-auto bg-card">
+              <Card className="h-60 overflow-y-auto bg-card">
                 <CardContent className="p-4 space-y-4">
                   {messages.length === 0 && (
                     <div className="flex items-center gap-3 p-4 bg-primary/5 rounded-lg">
