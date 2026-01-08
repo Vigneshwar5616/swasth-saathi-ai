@@ -38,7 +38,7 @@ export function AppSidebar() {
             <Heart className="w-5 h-5 text-primary-foreground" />
           </div>
           <div>
-            <h2 className="font-semibold text-sidebar-foreground">HealthAI</h2>
+            <h2 className="font-semibold text-sidebar-foreground">Aarogyasri</h2>
             <p className="text-sm text-sidebar-foreground/70">Your AI Health Assistant</p>
           </div>
         </div>
