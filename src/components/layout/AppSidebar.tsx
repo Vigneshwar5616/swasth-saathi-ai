@@ -167,15 +167,7 @@ export function AppSidebar() {
                 </DropdownMenuItem>
               </DropdownMenuContent>
             </DropdownMenu>
-          ) : (
-            <Button 
-              className="w-full gap-2 shadow-lg shadow-primary/25 transition-all hover:scale-[1.02]"
-              onClick={() => navigate("/auth")}
-            >
-              <LogIn className="w-4 h-4" />
-              Sign In to Save Data
-            </Button>
-          )}
+          ) : null}
         </div>
       </SidebarFooter>
     </Sidebar>
