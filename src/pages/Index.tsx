@@ -30,19 +30,68 @@ const Index = () => {
   const recognitionRef = useRef<SpeechRecognition | null>(null);
   const { toast } = useToast();
 
-  // Setup Web Speech voices
+  // Setup Web Speech voices with Indian preferences
   const synth = window.speechSynthesis;
-  const voiceForLang = useMemo(() => {
-    const voices = synth.getVoices();
-    return voices.find(v => v.lang?.toLowerCase() === language.toLowerCase()) || voices.find(v => v.lang?.startsWith(language.split("-")[0])) || voices[0];
-  }, [language, synth]);
-
+  const [availableVoices, setAvailableVoices] = useState<SpeechSynthesisVoice[]>([]);
+  
+  // Load voices when they become available
   useEffect(() => {
-    // Chrome needs this to populate voices
-    const onVoicesChanged = () => {};
-    synth.addEventListener?.("voiceschanged", onVoicesChanged);
-    return () => synth.removeEventListener?.("voiceschanged", onVoicesChanged as any);
+    const loadVoices = () => {
+      const voices = synth.getVoices();
+      if (voices.length > 0) {
+        setAvailableVoices(voices);
+      }
+    };
+    
+    loadVoices();
+    synth.addEventListener?.("voiceschanged", loadVoices);
+    return () => synth.removeEventListener?.("voiceschanged", loadVoices);
   }, [synth]);
+
+  // Find the best Indian voice for the selected language
+  const voiceForLang = useMemo(() => {
+    if (availableVoices.length === 0) return null;
+    
+    // Language code mapping for Indian languages
+    const langMap: Record<string, string[]> = {
+      "en-IN": ["en-IN", "en_IN", "English India", "English (India)"],
+      "hi-IN": ["hi-IN", "hi_IN", "Hindi", "हिंदी"],
+      "te-IN": ["te-IN", "te_IN", "Telugu", "తెలుగు"],
+      "ta-IN": ["ta-IN", "ta_IN", "Tamil", "தமிழ்"],
+      "kn-IN": ["kn-IN", "kn_IN", "Kannada", "ಕನ್ನಡ"],
+      "ml-IN": ["ml-IN", "ml_IN", "Malayalam", "മലയാളം"],
+      "mr-IN": ["mr-IN", "mr_IN", "Marathi", "मराठी"],
+      "bn-IN": ["bn-IN", "bn_IN", "Bengali", "বাংলা"],
+      "gu-IN": ["gu-IN", "gu_IN", "Gujarati", "ગુજરાતી"],
+    };
+    
+    const searchTerms = langMap[language] || [language];
+    
+    // Priority 1: Find exact Indian voice match
+    for (const term of searchTerms) {
+      const exactMatch = availableVoices.find(v => 
+        v.lang === term || 
+        v.name.toLowerCase().includes(term.toLowerCase())
+      );
+      if (exactMatch) return exactMatch;
+    }
+    
+    // Priority 2: Find any voice with Indian locale
+    const indianVoice = availableVoices.find(v => 
+      v.lang.includes("IN") || 
+      v.name.toLowerCase().includes("india") ||
+      v.name.toLowerCase().includes("indian")
+    );
+    if (indianVoice) return indianVoice;
+    
+    // Priority 3: For Indian languages, find any matching language
+    const baseLang = language.split("-")[0];
+    const langMatch = availableVoices.find(v => v.lang.startsWith(baseLang));
+    if (langMatch) return langMatch;
+    
+    // Fallback to first available
+    return availableVoices[0];
+  }, [language, availableVoices]);
 
   // Load user settings
   useEffect(() => {
@@ -70,15 +119,46 @@ const Index = () => {
     }
   };
 
+  // Enhanced speak function with natural Indian speech settings
   const speak = (text: string) => {
     if (!voice) return;
-    const utter = new SpeechSynthesisUtterance(text);
-    if (voiceForLang) utter.voice = voiceForLang;
-    utter.lang = language;
-    utter.rate = 1;
-    utter.pitch = 1;
+    
+    // Cancel any ongoing speech
     synth.cancel();
-    synth.speak(utter);
+    
+    // Clean text for better pronunciation
+    const cleanText = text
+      .replace(/\*\*/g, "") // Remove markdown bold
+      .replace(/\*/g, "")   // Remove markdown italic
+      .replace(/#{1,6}\s/g, "") // Remove markdown headers
+      .replace(/\n+/g, ". ") // Convert newlines to pauses
+      .replace(/\s+/g, " ") // Normalize whitespace
+      .trim();
+    
+    // Split into sentences for more natural pacing
+    const sentences = cleanText.match(/[^.!?]+[.!?]+/g) || [cleanText];
+    
+    sentences.forEach((sentence, index) => {
+      const utter = new SpeechSynthesisUtterance(sentence.trim());
+      
+      if (voiceForLang) {
+        utter.voice = voiceForLang;
+      }
+      
+      utter.lang = language;
+      
+      // Natural Indian speech settings
+      // Slower rate for clarity and natural Indian English cadence
+      utter.rate = 0.85;
+      
+      // Slightly higher pitch for warmth (Indian accent characteristic)
+      utter.pitch = 1.1;
+      
+      // Full volume for clarity
+      utter.volume = 1.0;
+      
+      synth.speak(utter);
+    });
   };
 
   const handleMic = async () => {
