@@ -249,6 +249,7 @@ const Index = () => {
         <DashboardHeader 
           searchQuery={searchQuery}
           onSearchChange={setSearchQuery}
+          onSearchSelect={(query) => setInput(query)}
         />
         
         <main className="flex-1 overflow-auto">
