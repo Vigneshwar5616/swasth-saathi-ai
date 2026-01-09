@@ -65,61 +65,14 @@ export function AppSidebar() {
   return (
     <Sidebar className="border-r border-sidebar-border bg-sidebar">
       <SidebarHeader className="p-4 border-b border-sidebar-border">
-        <div className="flex items-center justify-between">
-          <div className="flex items-center gap-3">
-            <div className="w-10 h-10 rounded-xl bg-primary flex items-center justify-center shadow-lg shadow-primary/25 transition-transform hover:scale-105">
-              <Heart className="w-5 h-5 text-primary-foreground" />
-            </div>
-            <div>
-              <h2 className="font-bold text-sidebar-foreground">Aarogyasri</h2>
-              <p className="text-xs text-sidebar-foreground/60">AI Health Assistant</p>
-            </div>
+        <div className="flex items-center gap-3">
+          <div className="w-10 h-10 rounded-xl bg-primary flex items-center justify-center shadow-lg shadow-primary/25 transition-transform hover:scale-105">
+            <Heart className="w-5 h-5 text-primary-foreground" />
           </div>
-          
-          {user ? (
-            <DropdownMenu>
-              <DropdownMenuTrigger asChild>
-                <Button 
-                  variant="ghost" 
-                  size="icon"
-                  className="w-9 h-9 rounded-full bg-primary hover:bg-primary/90 transition-all hover:scale-105"
-                >
-                  <span className="text-xs font-semibold text-primary-foreground">{getInitials()}</span>
-                </Button>
-              </DropdownMenuTrigger>
-              <DropdownMenuContent align="end" className="w-56">
-                <div className="px-2 py-1.5">
-                  <p className="text-sm font-medium">
-                    {user.user_metadata?.full_name || "User"}
-                  </p>
-                  <p className="text-xs text-muted-foreground truncate">{user.email}</p>
-                </div>
-                <DropdownMenuSeparator />
-                <DropdownMenuItem onClick={() => navigate("/settings")}>
-                  <User className="w-4 h-4 mr-2" />
-                  Profile Settings
-                </DropdownMenuItem>
-                <DropdownMenuItem onClick={() => navigate("/settings")}>
-                  <Settings className="w-4 h-4 mr-2" />
-                  Preferences
-                </DropdownMenuItem>
-                <DropdownMenuSeparator />
-                <DropdownMenuItem onClick={handleSignOut} className="text-destructive focus:text-destructive">
-                  <LogOut className="w-4 h-4 mr-2" />
-                  Sign Out
-                </DropdownMenuItem>
-              </DropdownMenuContent>
-            </DropdownMenu>
-          ) : (
-            <Button 
-              size="sm"
-              className="gap-2 shadow-lg shadow-primary/25 transition-all hover:scale-105"
-              onClick={() => navigate("/auth")}
-            >
-              <LogIn className="w-4 h-4" />
-              Sign In
-            </Button>
-          )}
+          <div>
+            <h2 className="font-bold text-sidebar-foreground">Aarogyasri</h2>
+            <p className="text-xs text-sidebar-foreground/60">AI Health Assistant</p>
+          </div>
         </div>
       </SidebarHeader>
 
@@ -174,6 +127,56 @@ export function AppSidebar() {
             </SidebarMenuItem>
           ))}
         </SidebarMenu>
+        
+        <div className="mt-4 pt-4 border-t border-sidebar-border">
+          {user ? (
+            <DropdownMenu>
+              <DropdownMenuTrigger asChild>
+                <button className="w-full flex items-center gap-3 px-3 py-2.5 rounded-xl hover:bg-sidebar-accent transition-all duration-200 group">
+                  <div className="w-9 h-9 rounded-full bg-primary flex items-center justify-center shadow-md shadow-primary/25 group-hover:scale-105 transition-transform">
+                    <span className="text-sm font-semibold text-primary-foreground">{getInitials()}</span>
+                  </div>
+                  <div className="flex-1 text-left min-w-0">
+                    <p className="text-sm font-medium text-sidebar-foreground truncate">
+                      {user.user_metadata?.full_name || user.email?.split("@")[0]}
+                    </p>
+                    <p className="text-xs text-sidebar-foreground/60 truncate">{user.email}</p>
+                  </div>
+                </button>
+              </DropdownMenuTrigger>
+              <DropdownMenuContent align="end" side="top" className="w-56">
+                <div className="px-2 py-1.5">
+                  <p className="text-sm font-medium">
+                    {user.user_metadata?.full_name || "User"}
+                  </p>
+                  <p className="text-xs text-muted-foreground truncate">{user.email}</p>
+                </div>
+                <DropdownMenuSeparator />
+                <DropdownMenuItem onClick={() => navigate("/settings")}>
+                  <User className="w-4 h-4 mr-2" />
+                  Profile Settings
+                </DropdownMenuItem>
+                <DropdownMenuItem onClick={() => navigate("/settings")}>
+                  <Settings className="w-4 h-4 mr-2" />
+                  Preferences
+                </DropdownMenuItem>
+                <DropdownMenuSeparator />
+                <DropdownMenuItem onClick={handleSignOut} className="text-destructive focus:text-destructive">
+                  <LogOut className="w-4 h-4 mr-2" />
+                  Sign Out
+                </DropdownMenuItem>
+              </DropdownMenuContent>
+            </DropdownMenu>
+          ) : (
+            <Button 
+              className="w-full gap-2 shadow-lg shadow-primary/25 transition-all hover:scale-[1.02]"
+              onClick={() => navigate("/auth")}
+            >
+              <LogIn className="w-4 h-4" />
+              Sign In to Save Data
+            </Button>
+          )}
+        </div>
       </SidebarFooter>
     </Sidebar>
   );
