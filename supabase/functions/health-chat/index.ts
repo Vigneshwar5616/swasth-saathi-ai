@@ -67,15 +67,11 @@ Guidelines:
         "Content-Type": "application/json",
       },
       body: JSON.stringify({
-        model: "llama-3.1-sonar-small-128k-online",
+        model: "sonar",
         messages: finalMessages,
         temperature: 0.2,
         top_p: 0.9,
         max_tokens: 800,
-        return_images: false,
-        return_related_questions: false,
-        frequency_penalty: 0.5,
-        presence_penalty: 0,
       }),
     });
 
