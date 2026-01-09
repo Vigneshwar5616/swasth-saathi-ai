@@ -1,1 +1,4 @@
 project_id = "tknpmvtfccepvwegcnfz"
+
+[functions.health-chat]
+verify_jwt = false

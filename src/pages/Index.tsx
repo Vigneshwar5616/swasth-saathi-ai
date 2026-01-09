@@ -125,7 +125,7 @@ const Index = () => {
     setInput("");
     setLoading(true);
     try {
-      const resp = await fetch("/supabase/functions/v1/health-chat", {
+      const resp = await fetch("https://tknpmvtfccepvwegcnfz.supabase.co/functions/v1/health-chat", {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
