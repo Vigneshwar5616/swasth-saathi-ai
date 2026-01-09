@@ -5,6 +5,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { Checkbox } from "@/components/ui/checkbox";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { useToast } from "@/hooks/use-toast";
 import { Heart, Loader2, Mail, Lock, User } from "lucide-react";
@@ -21,6 +22,7 @@ const Auth = () => {
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [fullName, setFullName] = useState("");
+  const [rememberMe, setRememberMe] = useState(true);
   const [loading, setLoading] = useState(false);
   const [errors, setErrors] = useState<{ email?: string; password?: string }>({});
 
@@ -53,7 +55,7 @@ const Auth = () => {
     if (!validateForm()) return;
     
     setLoading(true);
-    const { error } = await signIn(email, password);
+    const { error } = await signIn(email, password, rememberMe);
     setLoading(false);
     
     if (error) {
@@ -158,7 +160,21 @@ const Auth = () => {
                         required
                       />
                     </div>
-                    {errors.password && <p className="text-sm text-destructive">{errors.password}</p>}
+                  {errors.password && <p className="text-sm text-destructive">{errors.password}</p>}
+                  </div>
+                  
+                  <div className="flex items-center space-x-2">
+                    <Checkbox 
+                      id="remember-me" 
+                      checked={rememberMe}
+                      onCheckedChange={(checked) => setRememberMe(checked === true)}
+                    />
+                    <Label 
+                      htmlFor="remember-me" 
+                      className="text-sm font-normal cursor-pointer"
+                    >
+                      Remember me
+                    </Label>
                   </div>
                   
                   <Button type="submit" className="w-full" disabled={loading}>
