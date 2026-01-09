@@ -1,4 +1,5 @@
 import { Card, CardContent } from "@/components/ui/card";
+import { Badge } from "@/components/ui/badge";
 import { 
   Stethoscope, 
   Heart, 
@@ -12,44 +13,38 @@ const quickActions = [
   {
     title: "Check Symptoms",
     icon: Stethoscope,
-    color: "text-blue-600",
-    bgColor: "bg-blue-50",
-    description: "Describe your symptoms"
+    description: "Describe your symptoms",
+    comingSoon: false
   },
   {
     title: "Heart Health",
     icon: Heart,
-    color: "text-red-500",
-    bgColor: "bg-red-50",
-    description: "Monitor heart wellness"
+    description: "Monitor heart wellness",
+    comingSoon: false
   },
   {
     title: "Mental Health",
     icon: Brain,
-    color: "text-purple-600",
-    bgColor: "bg-purple-50",
-    description: "Emotional wellbeing"
+    description: "Emotional wellbeing",
+    comingSoon: false
   },
   {
     title: "Medications",
     icon: Pill,
-    color: "text-green-600",
-    bgColor: "bg-green-50",
-    description: "Track your medicines"
+    description: "Track your medicines",
+    comingSoon: true
   },
   {
     title: "Book Appointment",
     icon: Calendar,
-    color: "text-orange-600",
-    bgColor: "bg-orange-50",
-    description: "Schedule with doctor"
+    description: "Schedule with doctor",
+    comingSoon: true
   },
   {
     title: "Emergency Info",
     icon: AlertTriangle,
-    color: "text-red-600",
-    bgColor: "bg-red-50",
-    description: "Urgent medical help"
+    description: "Urgent medical help",
+    comingSoon: true
   },
 ];
 
@@ -65,16 +60,36 @@ export function QuickActions({ onActionClick }: QuickActionsProps) {
         {quickActions.map((action) => (
           <Card 
             key={action.title}
-            className="cursor-pointer hover:shadow-md transition-all duration-200 hover:scale-[1.02] border-border"
-            onClick={() => onActionClick?.(action.title)}
+            className={`relative overflow-hidden transition-all duration-300 border-border ${
+              action.comingSoon 
+                ? "opacity-70 cursor-not-allowed bg-muted/30" 
+                : "cursor-pointer hover:shadow-lg hover:scale-[1.02] hover:border-primary/30 bg-card"
+            }`}
+            onClick={() => !action.comingSoon && onActionClick?.(action.title)}
           >
+            {action.comingSoon && (
+              <Badge 
+                variant="secondary" 
+                className="absolute top-2 right-2 text-xs bg-accent/20 text-accent-foreground"
+              >
+                Coming Soon
+              </Badge>
+            )}
             <CardContent className="p-6">
               <div className="flex flex-col items-center text-center space-y-3">
-                <div className={`w-12 h-12 rounded-full ${action.bgColor} flex items-center justify-center`}>
-                  <action.icon className={`w-6 h-6 ${action.color}`} />
+                <div className={`w-14 h-14 rounded-2xl flex items-center justify-center transition-colors ${
+                  action.comingSoon 
+                    ? "bg-muted" 
+                    : "bg-gradient-to-br from-primary/10 to-accent/10"
+                }`}>
+                  <action.icon className={`w-7 h-7 ${
+                    action.comingSoon ? "text-muted-foreground" : "text-primary"
+                  }`} />
                 </div>
                 <div>
-                  <h3 className="font-medium text-foreground">{action.title}</h3>
+                  <h3 className={`font-medium ${
+                    action.comingSoon ? "text-muted-foreground" : "text-foreground"
+                  }`}>{action.title}</h3>
                   <p className="text-sm text-muted-foreground mt-1">{action.description}</p>
                 </div>
               </div>
