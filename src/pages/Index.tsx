@@ -6,6 +6,7 @@ import { useToast } from "@/hooks/use-toast";
 import { Mic, Send, Loader2 } from "lucide-react";
 import { ChatMessage } from "@/components/chat/ChatMessage";
 import { AppSidebar } from "@/components/layout/AppSidebar";
+import { SidebarTrigger } from "@/components/ui/sidebar";
 import { DashboardHeader } from "@/components/dashboard/DashboardHeader";
 import { QuickActions } from "@/components/dashboard/QuickActions";
 import LanguageSelector from "@/components/chat/LanguageSelector";
@@ -245,15 +246,20 @@ const Index = () => {
 
       <AppSidebar />
       
-      <div className="flex-1 flex flex-col">
-        <DashboardHeader 
-          searchQuery={searchQuery}
-          onSearchChange={setSearchQuery}
-          onSearchSelect={(query) => setInput(query)}
-        />
+      <div className="flex-1 flex flex-col min-w-0">
+        <header className="sticky top-0 z-10 border-b border-border bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/60">
+          <div className="flex h-14 items-center gap-4 px-4 md:px-6">
+            <SidebarTrigger className="md:hidden" />
+            <DashboardHeader 
+              searchQuery={searchQuery}
+              onSearchChange={setSearchQuery}
+              onSearchSelect={(query) => setInput(query)}
+            />
+          </div>
+        </header>
         
         <main className="flex-1 overflow-auto">
-          <div className="container mx-auto p-6 space-y-8">
+          <div className="container mx-auto p-4 md:p-6 space-y-6 md:space-y-8">
             <section className="space-y-6">
               <QuickActions onActionClick={handleQuickAction} />
             </section>
