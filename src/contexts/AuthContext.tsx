@@ -6,7 +6,7 @@ interface AuthContextType {
   user: User | null;
   session: Session | null;
   loading: boolean;
-  signIn: (email: string, password: string) => Promise<{ error: any }>;
+  signIn: (email: string, password: string, rememberMe?: boolean) => Promise<{ error: any }>;
   signUp: (email: string, password: string, fullName?: string) => Promise<{ error: any }>;
   signOut: () => Promise<void>;
 }
@@ -38,11 +38,26 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     return () => subscription.unsubscribe();
   }, []);
 
-  const signIn = async (email: string, password: string) => {
+  const signIn = async (email: string, password: string, rememberMe: boolean = true) => {
+    // If not remembering, we'll sign out when the browser closes
+    // Supabase handles this through localStorage vs sessionStorage
+    if (!rememberMe) {
+      // Clear any existing session first
+      await supabase.auth.signOut();
+    }
+    
     const { error } = await supabase.auth.signInWithPassword({
       email,
       password,
     });
+    
+    // If user doesn't want to be remembered, we store a flag
+    if (!error && !rememberMe) {
+      sessionStorage.setItem('session_only', 'true');
+    } else if (!error) {
+      sessionStorage.removeItem('session_only');
+    }
+    
     return { error };
   };
 
