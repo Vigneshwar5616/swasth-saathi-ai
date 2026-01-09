@@ -3,9 +3,11 @@ import {
   History, 
   Settings, 
   HelpCircle,
-  Heart
+  Heart,
+  LogIn,
+  LogOut
 } from "lucide-react";
-import { NavLink } from "react-router-dom";
+import { NavLink, useNavigate } from "react-router-dom";
 import {
   Sidebar,
   SidebarContent,
@@ -18,6 +20,8 @@ import {
   SidebarFooter,
 } from "@/components/ui/sidebar";
 import { cn } from "@/lib/utils";
+import { useAuth } from "@/contexts/AuthContext";
+import { Button } from "@/components/ui/button";
 
 const navigationItems = [
   { title: "Chat", url: "/", icon: MessageCircle },
@@ -30,6 +34,26 @@ const footerItems = [
 ];
 
 export function AppSidebar() {
+  const { user, signOut } = useAuth();
+  const navigate = useNavigate();
+
+  const handleSignOut = async () => {
+    await signOut();
+    navigate("/");
+  };
+
+  const getInitials = () => {
+    if (user?.user_metadata?.full_name) {
+      return user.user_metadata.full_name
+        .split(" ")
+        .map((n: string) => n[0])
+        .join("")
+        .toUpperCase()
+        .slice(0, 2);
+    }
+    return user?.email?.charAt(0).toUpperCase() || "U";
+  };
+
   return (
     <Sidebar className="border-r border-sidebar-border bg-sidebar">
       <SidebarHeader className="p-6 border-b border-sidebar-border">
@@ -95,15 +119,51 @@ export function AppSidebar() {
         </SidebarMenu>
         
         <div className="mt-4 pt-4 border-t border-sidebar-border">
-          <div className="flex items-center gap-2 px-3">
-            <div className="w-8 h-8 rounded-full bg-muted flex items-center justify-center">
-              <span className="text-sm font-medium">G</span>
+          {user ? (
+            <div className="space-y-3">
+              <div className="flex items-center gap-2 px-3">
+                <div className="w-8 h-8 rounded-full bg-primary flex items-center justify-center">
+                  <span className="text-sm font-medium text-primary-foreground">{getInitials()}</span>
+                </div>
+                <div className="flex-1 min-w-0">
+                  <p className="text-sm font-medium text-sidebar-foreground truncate">
+                    {user.user_metadata?.full_name || user.email?.split("@")[0]}
+                  </p>
+                  <p className="text-xs text-sidebar-foreground/70 truncate">{user.email}</p>
+                </div>
+              </div>
+              <Button
+                variant="ghost"
+                size="sm"
+                className="w-full justify-start text-sidebar-foreground"
+                onClick={handleSignOut}
+              >
+                <LogOut className="w-4 h-4 mr-2" />
+                Sign Out
+              </Button>
             </div>
-            <div className="flex-1 min-w-0">
-              <p className="text-sm font-medium text-sidebar-foreground">Guest User</p>
-              <p className="text-xs text-sidebar-foreground/70 truncate">Sign in to save data</p>
+          ) : (
+            <div className="space-y-3">
+              <div className="flex items-center gap-2 px-3">
+                <div className="w-8 h-8 rounded-full bg-muted flex items-center justify-center">
+                  <span className="text-sm font-medium">G</span>
+                </div>
+                <div className="flex-1 min-w-0">
+                  <p className="text-sm font-medium text-sidebar-foreground">Guest User</p>
+                  <p className="text-xs text-sidebar-foreground/70 truncate">Sign in to save data</p>
+                </div>
+              </div>
+              <Button
+                variant="default"
+                size="sm"
+                className="w-full"
+                onClick={() => navigate("/auth")}
+              >
+                <LogIn className="w-4 h-4 mr-2" />
+                Sign In
+              </Button>
             </div>
-          </div>
+          )}
         </div>
       </SidebarFooter>
     </Sidebar>

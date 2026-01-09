@@ -1,7 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
-
 import { Textarea } from "@/components/ui/textarea";
 import { useToast } from "@/hooks/use-toast";
 import { Mic, Send, Loader2 } from "lucide-react";
@@ -12,10 +11,12 @@ import { QuickActions } from "@/components/dashboard/QuickActions";
 import LanguageSelector from "@/components/chat/LanguageSelector";
 import VoiceToggle from "@/components/chat/VoiceToggle";
 import { supabase } from "@/integrations/supabase/client";
+import { useAuth } from "@/contexts/AuthContext";
 
 interface Message { role: "user" | "assistant"; content: string }
 
 const Index = () => {
+  const { user } = useAuth();
   const [language, setLanguage] = useState<string>("en-IN");
   const [messages, setMessages] = useState<Message[]>([]);
   const [input, setInput] = useState("");
@@ -42,6 +43,32 @@ const Index = () => {
     return () => synth.removeEventListener?.("voiceschanged", onVoicesChanged as any);
   }, [synth]);
 
+  // Load user settings
+  useEffect(() => {
+    if (user) {
+      loadUserSettings();
+    }
+  }, [user]);
+
+  const loadUserSettings = async () => {
+    if (!user) return;
+    
+    const { data } = await supabase
+      .from("user_settings")
+      .select("preferred_language, voice_enabled")
+      .eq("user_id", user.id)
+      .single();
+    
+    if (data) {
+      if (data.preferred_language) {
+        setLanguage(data.preferred_language === "en" ? "en-IN" : `${data.preferred_language}-IN`);
+      }
+      if (data.voice_enabled !== null) {
+        setVoice(data.voice_enabled);
+      }
+    }
+  };
+
   const speak = (text: string) => {
     if (!voice) return;
     const utter = new SpeechSynthesisUtterance(text);
@@ -55,7 +82,6 @@ const Index = () => {
 
   const handleMic = async () => {
     if (isListening) {
-      // Stop listening
       if (recognitionRef.current) {
         recognitionRef.current.stop();
         setIsListening(false);
@@ -142,22 +168,24 @@ const Index = () => {
       setMessages((curr) => [...curr, { role: "assistant", content: reply }]);
       speak(reply);
       
-      // Save conversation to database (owner-only access)
-      try {
-        const { error } = await supabase.rpc('insert_chat_conversation', {
-          p_user_message: text,
-          p_assistant_message: reply,
-          p_language: language,
-          p_user_ip: null, // Could be added if needed
-          p_user_agent: navigator.userAgent
-        });
-        
-        if (error) {
-          console.warn('Failed to save conversation to database:', error);
+      // Save conversation to database (only for logged in users)
+      if (user) {
+        try {
+          const { error } = await supabase
+            .from("user_conversations")
+            .insert({
+              user_id: user.id,
+              user_message: text,
+              assistant_message: reply,
+              language: language,
+            });
+          
+          if (error) {
+            console.warn('Failed to save conversation to database:', error);
+          }
+        } catch (dbError) {
+          console.warn('Database save error:', dbError);
         }
-      } catch (dbError) {
-        // Don't break the chat if database save fails
-        console.warn('Database save error:', dbError);
       }
     } catch (e: any) {
       toast({ title: "Request failed", description: e?.message || String(e) });
@@ -247,7 +275,7 @@ const Index = () => {
                         <span className="text-xs font-medium text-primary-foreground">AI</span>
                       </div>
                       <div className="text-sm text-foreground">
-                        Hello! I'm your AI Health Assistant. I'm here to help you with health information, symptom guidance, and general wellness questions. Sign in to save your chat history. How can I assist you today?
+                        Hello! I'm your AI Health Assistant. I'm here to help you with health information, symptom guidance, and general wellness questions. {!user && "Sign in to save your chat history."} How can I assist you today?
                       </div>
                     </div>
                   )}
@@ -310,7 +338,7 @@ const Index = () => {
                 </div>
 
                 <p className="text-xs text-muted-foreground text-center">
-                  This AI assistant provides general health information only. Always consult healthcare professionals for medical advice. Sign in to save your chat history.
+                  This AI assistant provides general health information only. Always consult healthcare professionals for medical advice. {!user && "Sign in to save your chat history."}
                 </p>
               </div>
             </section>

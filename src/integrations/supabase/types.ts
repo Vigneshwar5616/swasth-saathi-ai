@@ -14,6 +14,39 @@ export type Database = {
   }
   public: {
     Tables: {
+      billing_info: {
+        Row: {
+          billing_email: string | null
+          card_brand: string | null
+          card_last_four: string | null
+          created_at: string
+          id: string
+          plan: string | null
+          updated_at: string
+          user_id: string
+        }
+        Insert: {
+          billing_email?: string | null
+          card_brand?: string | null
+          card_last_four?: string | null
+          created_at?: string
+          id?: string
+          plan?: string | null
+          updated_at?: string
+          user_id: string
+        }
+        Update: {
+          billing_email?: string | null
+          card_brand?: string | null
+          card_last_four?: string | null
+          created_at?: string
+          id?: string
+          plan?: string | null
+          updated_at?: string
+          user_id?: string
+        }
+        Relationships: []
+      }
       chat_conversations: {
         Row: {
           assistant_message: string
@@ -62,11 +95,147 @@ export type Database = {
         }
         Relationships: []
       }
+      profiles: {
+        Row: {
+          avatar_url: string | null
+          created_at: string
+          date_of_birth: string | null
+          email: string | null
+          full_name: string | null
+          id: string
+          phone: string | null
+          updated_at: string
+        }
+        Insert: {
+          avatar_url?: string | null
+          created_at?: string
+          date_of_birth?: string | null
+          email?: string | null
+          full_name?: string | null
+          id: string
+          phone?: string | null
+          updated_at?: string
+        }
+        Update: {
+          avatar_url?: string | null
+          created_at?: string
+          date_of_birth?: string | null
+          email?: string | null
+          full_name?: string | null
+          id?: string
+          phone?: string | null
+          updated_at?: string
+        }
+        Relationships: []
+      }
+      user_conversations: {
+        Row: {
+          assistant_message: string
+          created_at: string
+          id: string
+          language: string | null
+          user_id: string
+          user_message: string
+        }
+        Insert: {
+          assistant_message: string
+          created_at?: string
+          id?: string
+          language?: string | null
+          user_id: string
+          user_message: string
+        }
+        Update: {
+          assistant_message?: string
+          created_at?: string
+          id?: string
+          language?: string | null
+          user_id?: string
+          user_message?: string
+        }
+        Relationships: []
+      }
+      user_roles: {
+        Row: {
+          created_at: string
+          id: string
+          role: Database["public"]["Enums"]["app_role"]
+          user_id: string
+        }
+        Insert: {
+          created_at?: string
+          id?: string
+          role?: Database["public"]["Enums"]["app_role"]
+          user_id: string
+        }
+        Update: {
+          created_at?: string
+          id?: string
+          role?: Database["public"]["Enums"]["app_role"]
+          user_id?: string
+        }
+        Relationships: []
+      }
+      user_settings: {
+        Row: {
+          created_at: string
+          data_collection: boolean | null
+          email_notifications: boolean | null
+          health_reminders: boolean | null
+          id: string
+          preferred_language: string | null
+          push_notifications: boolean | null
+          share_analytics: boolean | null
+          theme: string | null
+          updated_at: string
+          user_id: string
+          voice_enabled: boolean | null
+          weekly_summary: boolean | null
+        }
+        Insert: {
+          created_at?: string
+          data_collection?: boolean | null
+          email_notifications?: boolean | null
+          health_reminders?: boolean | null
+          id?: string
+          preferred_language?: string | null
+          push_notifications?: boolean | null
+          share_analytics?: boolean | null
+          theme?: string | null
+          updated_at?: string
+          user_id: string
+          voice_enabled?: boolean | null
+          weekly_summary?: boolean | null
+        }
+        Update: {
+          created_at?: string
+          data_collection?: boolean | null
+          email_notifications?: boolean | null
+          health_reminders?: boolean | null
+          id?: string
+          preferred_language?: string | null
+          push_notifications?: boolean | null
+          share_analytics?: boolean | null
+          theme?: string | null
+          updated_at?: string
+          user_id?: string
+          voice_enabled?: boolean | null
+          weekly_summary?: boolean | null
+        }
+        Relationships: []
+      }
     }
     Views: {
       [_ in never]: never
     }
     Functions: {
+      has_role: {
+        Args: {
+          _role: Database["public"]["Enums"]["app_role"]
+          _user_id: string
+        }
+        Returns: boolean
+      }
       insert_chat_conversation: {
         Args: {
           p_assistant_message: string
@@ -79,7 +248,7 @@ export type Database = {
       }
     }
     Enums: {
-      [_ in never]: never
+      app_role: "admin" | "user"
     }
     CompositeTypes: {
       [_ in never]: never
@@ -206,6 +375,8 @@ export type CompositeTypes<
 
 export const Constants = {
   public: {
-    Enums: {},
+    Enums: {
+      app_role: ["admin", "user"],
+    },
   },
 } as const
