@@ -2,7 +2,6 @@ import { useState, useEffect, useRef } from "react";
 import { Search, Moon, Sun, Loader2, Newspaper, Activity, Pill, Heart, Info } from "lucide-react";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
-import { SidebarTrigger } from "@/components/ui/sidebar";
 import { useTheme } from "next-themes";
 import { cn } from "@/lib/utils";
 
@@ -99,72 +98,68 @@ export function DashboardHeader({ searchQuery, onSearchChange, onSearchSelect }:
   };
 
   return (
-    <header className="border-b border-border bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/60">
-      <div className="flex h-16 items-center gap-4 px-6">
-        <SidebarTrigger className="-ml-1" />
-        
-        <div className="flex-1 max-w-xl relative" ref={searchRef}>
-          <div className="relative">
-            {loading ? (
-              <Loader2 className="absolute left-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-muted-foreground animate-spin" />
-            ) : (
-              <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-muted-foreground" />
-            )}
-            <Input
-              placeholder="Search health topics, symptoms, news..."
-              value={searchQuery}
-              onChange={(e) => onSearchChange?.(e.target.value)}
-              onFocus={() => results.length > 0 && setShowResults(true)}
-              className="pl-10 bg-muted/50 border-muted focus:bg-background transition-all"
-            />
-          </div>
-          
-          {/* Search Results Dropdown */}
-          {showResults && results.length > 0 && (
-            <div className="absolute top-full left-0 right-0 mt-2 bg-background border border-border rounded-xl shadow-lg overflow-hidden z-50 animate-fade-in">
-              <div className="p-2 border-b border-border bg-muted/30">
-                <p className="text-xs text-muted-foreground px-2">Latest health updates for "{searchQuery}"</p>
-              </div>
-              <div className="max-h-80 overflow-y-auto">
-                {results.map((result, index) => {
-                  const Icon = categoryIcons[result.category] || Info;
-                  const colorClass = categoryColors[result.category] || categoryColors.general;
-                  
-                  return (
-                    <button
-                      key={index}
-                      onClick={() => handleResultClick(result)}
-                      className="w-full text-left p-3 hover:bg-muted/50 transition-colors flex items-start gap-3 border-b border-border last:border-0"
-                    >
-                      <div className={cn("p-2 rounded-lg shrink-0", colorClass)}>
-                        <Icon className="h-4 w-4" />
-                      </div>
-                      <div className="flex-1 min-w-0">
-                        <p className="font-medium text-sm text-foreground line-clamp-1">{result.title}</p>
-                        <p className="text-xs text-muted-foreground line-clamp-2 mt-0.5">{result.description}</p>
-                        <span className={cn("inline-block text-[10px] px-2 py-0.5 rounded-full mt-1.5 capitalize", colorClass)}>
-                          {result.category}
-                        </span>
-                      </div>
-                    </button>
-                  );
-                })}
-              </div>
-            </div>
+    <div className="flex items-center gap-2 md:gap-4 flex-1">
+      <div className="flex-1 max-w-xl relative" ref={searchRef}>
+        <div className="relative">
+          {loading ? (
+            <Loader2 className="absolute left-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-muted-foreground animate-spin" />
+          ) : (
+            <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-muted-foreground" />
           )}
+          <Input
+            placeholder="Search health topics..."
+            value={searchQuery}
+            onChange={(e) => onSearchChange?.(e.target.value)}
+            onFocus={() => results.length > 0 && setShowResults(true)}
+            className="pl-10 bg-muted/50 border-muted focus:bg-background transition-all text-sm"
+          />
         </div>
-
-        <Button
-          variant="ghost"
-          size="icon"
-          onClick={() => setTheme(theme === "dark" ? "light" : "dark")}
-          className="h-9 w-9"
-        >
-          <Sun className="h-4 w-4 rotate-0 scale-100 transition-all dark:-rotate-90 dark:scale-0" />
-          <Moon className="absolute h-4 w-4 rotate-90 scale-0 transition-all dark:rotate-0 dark:scale-100" />
-          <span className="sr-only">Toggle theme</span>
-        </Button>
+        
+        {/* Search Results Dropdown */}
+        {showResults && results.length > 0 && (
+          <div className="absolute top-full left-0 right-0 mt-2 bg-background border border-border rounded-xl shadow-lg overflow-hidden z-50 animate-fade-in">
+            <div className="p-2 border-b border-border bg-muted/30">
+              <p className="text-xs text-muted-foreground px-2">Latest health updates for "{searchQuery}"</p>
+            </div>
+            <div className="max-h-80 overflow-y-auto">
+              {results.map((result, index) => {
+                const Icon = categoryIcons[result.category] || Info;
+                const colorClass = categoryColors[result.category] || categoryColors.general;
+                
+                return (
+                  <button
+                    key={index}
+                    onClick={() => handleResultClick(result)}
+                    className="w-full text-left p-3 hover:bg-muted/50 transition-colors flex items-start gap-3 border-b border-border last:border-0"
+                  >
+                    <div className={cn("p-2 rounded-lg shrink-0", colorClass)}>
+                      <Icon className="h-4 w-4" />
+                    </div>
+                    <div className="flex-1 min-w-0">
+                      <p className="font-medium text-sm text-foreground line-clamp-1">{result.title}</p>
+                      <p className="text-xs text-muted-foreground line-clamp-2 mt-0.5">{result.description}</p>
+                      <span className={cn("inline-block text-[10px] px-2 py-0.5 rounded-full mt-1.5 capitalize", colorClass)}>
+                        {result.category}
+                      </span>
+                    </div>
+                  </button>
+                );
+              })}
+            </div>
+          </div>
+        )}
       </div>
-    </header>
+
+      <Button
+        variant="ghost"
+        size="icon"
+        onClick={() => setTheme(theme === "dark" ? "light" : "dark")}
+        className="h-9 w-9 shrink-0"
+      >
+        <Sun className="h-4 w-4 rotate-0 scale-100 transition-all dark:-rotate-90 dark:scale-0" />
+        <Moon className="absolute h-4 w-4 rotate-90 scale-0 transition-all dark:rotate-0 dark:scale-100" />
+        <span className="sr-only">Toggle theme</span>
+      </Button>
+    </div>
   );
 }
