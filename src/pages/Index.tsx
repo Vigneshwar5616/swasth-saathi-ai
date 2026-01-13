@@ -232,6 +232,9 @@ const Index = () => {
     setMessages(next);
     setInput("");
     setLoading(true);
+    
+    let assistantContent = "";
+    
     try {
       const resp = await fetch("https://tknpmvtfccepvwegcnfz.supabase.co/functions/v1/health-chat", {
         method: "POST",
@@ -239,32 +242,83 @@ const Index = () => {
           "Content-Type": "application/json",
         },
         body: JSON.stringify({
-          messages: next,
+          messages: next.slice(-4), // Only send last 4 messages for faster response
           language: language,
+          stream: true,
         }),
       });
 
       if (!resp.ok) throw new Error(await resp.text());
-      const data = await resp.json();
-      const reply = data?.choices?.[0]?.message?.content || "I'm sorry, I couldn't get an answer right now.";
-      setMessages((curr) => [...curr, { role: "assistant", content: reply }]);
-      speak(reply);
+      
+      const reader = resp.body?.getReader();
+      if (!reader) throw new Error("No reader available");
+      
+      const decoder = new TextDecoder();
+      let buffer = "";
+      
+      // Add empty assistant message that we'll update
+      setMessages(curr => [...curr, { role: "assistant", content: "" }]);
+      
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+        
+        buffer += decoder.decode(value, { stream: true });
+        const lines = buffer.split("\n");
+        buffer = lines.pop() || "";
+        
+        for (const line of lines) {
+          if (!line.startsWith("data: ") || line.includes("[DONE]")) continue;
+          try {
+            const json = JSON.parse(line.slice(6));
+            const content = json.choices?.[0]?.delta?.content;
+            if (content) {
+              assistantContent += content;
+              setMessages(curr => {
+                const updated = [...curr];
+                if (updated.length > 0) {
+                  updated[updated.length - 1] = { role: "assistant", content: assistantContent };
+                }
+                return updated;
+              });
+            }
+          } catch {
+            // Ignore parse errors for incomplete chunks
+          }
+        }
+      }
+      
+      // If no streaming content, try non-streaming fallback
+      if (!assistantContent) {
+        const fallbackResp = await fetch("https://tknpmvtfccepvwegcnfz.supabase.co/functions/v1/health-chat", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ messages: next.slice(-4), language }),
+        });
+        const data = await fallbackResp.json();
+        assistantContent = data?.choices?.[0]?.message?.content || "I'm sorry, I couldn't get an answer right now.";
+        setMessages(curr => {
+          const updated = [...curr];
+          if (updated.length > 0) {
+            updated[updated.length - 1] = { role: "assistant", content: assistantContent };
+          }
+          return updated;
+        });
+      }
+      
+      speak(assistantContent);
       
       // Save conversation to database (only for logged in users)
-      if (user) {
+      if (user && assistantContent) {
         try {
-          const { error } = await supabase
+          await supabase
             .from("user_conversations")
             .insert({
               user_id: user.id,
               user_message: text,
-              assistant_message: reply,
+              assistant_message: assistantContent,
               language: language,
             });
-          
-          if (error) {
-            console.warn('Failed to save conversation to database:', error);
-          }
         } catch (dbError) {
           console.warn('Database save error:', dbError);
         }
