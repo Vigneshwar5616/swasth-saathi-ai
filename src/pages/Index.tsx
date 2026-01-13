@@ -120,8 +120,8 @@ const Index = () => {
     }
   };
 
-  // Enhanced speak function with natural Indian speech settings
-  const speak = (text: string) => {
+  // Enhanced speak function with ElevenLabs natural Indian voices
+  const speak = async (text: string) => {
     if (!voice) return;
     
     // Cancel any ongoing speech
@@ -136,10 +136,35 @@ const Index = () => {
       .replace(/\s+/g, " ") // Normalize whitespace
       .trim();
     
-    // Split into sentences for more natural pacing
+    // Try ElevenLabs first for natural voice
+    try {
+      const response = await fetch("https://tknpmvtfccepvwegcnfz.supabase.co/functions/v1/elevenlabs-tts", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          text: cleanText.substring(0, 2000), // Limit for API
+          language: language,
+        }),
+      });
+
+      if (response.ok) {
+        const audioBlob = await response.blob();
+        const audioUrl = URL.createObjectURL(audioBlob);
+        const audio = new Audio(audioUrl);
+        audio.playbackRate = 1.0;
+        await audio.play();
+        return;
+      }
+    } catch (error) {
+      console.warn("ElevenLabs TTS failed, falling back to browser TTS:", error);
+    }
+    
+    // Fallback to browser TTS
     const sentences = cleanText.match(/[^.!?]+[.!?]+/g) || [cleanText];
     
-    sentences.forEach((sentence, index) => {
+    sentences.forEach((sentence) => {
       const utter = new SpeechSynthesisUtterance(sentence.trim());
       
       if (voiceForLang) {
@@ -147,15 +172,8 @@ const Index = () => {
       }
       
       utter.lang = language;
-      
-      // Natural Indian speech settings
-      // Slower rate for clarity and natural Indian English cadence
       utter.rate = 0.85;
-      
-      // Slightly higher pitch for warmth (Indian accent characteristic)
       utter.pitch = 1.1;
-      
-      // Full volume for clarity
       utter.volume = 1.0;
       
       synth.speak(utter);
