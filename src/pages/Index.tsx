@@ -332,18 +332,34 @@ const Index = () => {
   };
 
   const handleQuickAction = (action: string) => {
-    const actionPrompts = {
-      "Check Symptoms": "I would like to check my symptoms. Can you help me describe what I'm experiencing?",
-      "Heart Health": "I want to learn about heart health and cardiovascular wellness.",
-      "Mental Health": "I need information about mental health and emotional wellbeing.",
-      "Medications": "I have questions about medications and their effects.",
-      "Book Appointment": "I need help understanding when I should book a medical appointment.",
-      "Emergency Info": "I need to know about emergency medical situations and when to seek immediate help."
+    const actionPrompts: Record<string, string> = {
+      "Heart Health": `Please provide comprehensive information about heart health and cardiovascular wellness. Include:
+- Key factors that affect heart health (diet, exercise, stress, sleep)
+- Common heart conditions to be aware of
+- Warning signs that need medical attention
+- Daily habits for a healthy heart
+- Traditional Indian foods and remedies good for the heart (like garlic, arjuna, hawthorn)
+- Exercise recommendations
+Please explain in a warm, caring way as a health advisor would.`,
+      "Mental Health": `Please provide detailed information about mental health and emotional wellbeing. Include:
+- What mental health means and why it matters
+- Common mental health concerns (stress, anxiety, depression)
+- Signs that indicate someone might need support
+- Daily practices for emotional wellness (meditation, breathing exercises, yoga)
+- Indian approaches to mental wellness (pranayama, mindfulness, Ayurvedic tips)
+- When and how to seek professional help
+- Tips for supporting loved ones
+Please explain compassionately and remove any stigma around mental health.`
     };
     
-    const prompt = actionPrompts[action as keyof typeof actionPrompts];
+    const prompt = actionPrompts[action];
     if (prompt) {
       setInput(prompt);
+      // Auto-send the prompt
+      setTimeout(() => {
+        const sendButton = document.querySelector('[data-send-button]') as HTMLButtonElement;
+        if (sendButton) sendButton.click();
+      }, 100);
     }
   };
 
@@ -478,6 +494,7 @@ const Index = () => {
                       disabled={loading || !input.trim()}
                       aria-label="Send message"
                       className="bg-primary hover:bg-primary/90 h-auto px-6"
+                      data-send-button
                     >
                       <Send className="h-4 w-4" />
                     </Button>

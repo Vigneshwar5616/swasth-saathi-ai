@@ -14,12 +14,12 @@ const quickActions = [
     title: "Check Symptoms",
     icon: Stethoscope,
     description: "Describe your symptoms",
-    comingSoon: false
+    comingSoon: true
   },
   {
     title: "Heart Health",
     icon: Heart,
-    description: "Monitor heart wellness",
+    description: "Cardiovascular wellness",
     comingSoon: false
   },
   {
