@@ -71,36 +71,76 @@ RESPONSE FORMAT:
 
     // Ensure messages alternate properly (user, assistant, user, assistant...)
     // Perplexity requires this pattern after the system message
-    const userMessages = messages
-      .filter((m: { role: string }) => m.role === "user" || m.role === "assistant")
-      .slice(-4);
     
-    // Ensure we start with a user message and alternate properly
+    // Filter out empty messages and only keep user/assistant
+    const validMessages = messages
+      .filter((m: { role: string; content: string }) => 
+        (m.role === "user" || m.role === "assistant") && 
+        m.content && 
+        m.content.trim().length > 0
+      );
+    
+    // Build alternating message array ensuring user starts first
     const alternatingMessages: ChatMessage[] = [];
-    let lastRole = "system";
     
-    for (const msg of userMessages) {
-      // Skip if same role as last (shouldn't happen but safety check)
-      if (msg.role === lastRole) continue;
+    for (let i = 0; i < validMessages.length; i++) {
+      const msg = validMessages[i];
+      const expectedRole = alternatingMessages.length % 2 === 0 ? "user" : "assistant";
       
-      alternatingMessages.push({
-        role: msg.role as "user" | "assistant",
-        content: msg.content
-      });
-      lastRole = msg.role;
+      if (msg.role === expectedRole) {
+        alternatingMessages.push({
+          role: msg.role as "user" | "assistant",
+          content: msg.content
+        });
+      } else if (msg.role === "user" && alternatingMessages.length === 0) {
+        // First message must be user
+        alternatingMessages.push({
+          role: "user",
+          content: msg.content
+        });
+      }
     }
     
-    // If no valid messages or doesn't start with user, just use the last user message
+    // If we have no messages or don't start with user, just use the last user message
     if (alternatingMessages.length === 0 || alternatingMessages[0].role !== "user") {
-      const lastUserMsg = messages.filter((m: { role: string }) => m.role === "user").pop();
+      const lastUserMsg = validMessages.filter((m: { role: string }) => m.role === "user").pop();
       if (lastUserMsg) {
         alternatingMessages.length = 0;
         alternatingMessages.push({
           role: "user" as const,
           content: lastUserMsg.content
         });
+      } else {
+        // No valid user message found
+        return new Response(JSON.stringify({ error: "No valid user message found" }), {
+          status: 400,
+          headers: { ...corsHeaders, "Content-Type": "application/json" },
+        });
       }
     }
+    
+    // Ensure we don't end with assistant (API expects user message last for new response)
+    // But actually Perplexity expects the last message to be user for getting a response
+    // So if last message is assistant, we should just use the last user message
+    if (alternatingMessages[alternatingMessages.length - 1]?.role === "assistant") {
+      // Keep only messages up to and including the last user message
+      while (alternatingMessages.length > 0 && alternatingMessages[alternatingMessages.length - 1].role === "assistant") {
+        alternatingMessages.pop();
+      }
+    }
+    
+    // Final safety check - must have at least one user message
+    if (alternatingMessages.length === 0) {
+      const lastUserMsg = validMessages.filter((m: { role: string }) => m.role === "user").pop();
+      if (lastUserMsg) {
+        alternatingMessages.push({
+          role: "user" as const,
+          content: lastUserMsg.content
+        });
+      }
+    }
+
+    console.log("Final messages count:", alternatingMessages.length, "roles:", alternatingMessages.map(m => m.role).join(","));
 
     const finalMessages: ChatMessage[] = [
       { role: "system", content: systemPrompt },

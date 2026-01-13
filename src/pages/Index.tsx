@@ -229,7 +229,10 @@ const Index = () => {
   const send = async () => {
     const text = input.trim();
     if (!text) return;
-    const next = [...messages, { role: "user", content: text } as Message];
+    
+    // Filter out any empty messages before adding new one
+    const cleanMessages = messages.filter(m => m.content && m.content.trim().length > 0);
+    const next = [...cleanMessages, { role: "user", content: text } as Message];
     setMessages(next);
     setInput("");
     setLoading(true);
@@ -243,13 +246,17 @@ const Index = () => {
           "Content-Type": "application/json",
         },
         body: JSON.stringify({
-          messages: next.slice(-4), // Only send last 4 messages for faster response
+          messages: next.filter(m => m.content && m.content.trim().length > 0).slice(-4),
           language: language,
           stream: true,
         }),
       });
 
-      if (!resp.ok) throw new Error(await resp.text());
+      if (!resp.ok) {
+        const errorText = await resp.text();
+        console.error("API Error:", errorText);
+        throw new Error("Failed to get response. Please try again.");
+      }
       
       const reader = resp.body?.getReader();
       if (!reader) throw new Error("No reader available");
@@ -257,8 +264,8 @@ const Index = () => {
       const decoder = new TextDecoder();
       let buffer = "";
       
-      // Add empty assistant message that we'll update
-      setMessages(curr => [...curr, { role: "assistant", content: "" }]);
+      // Add placeholder assistant message that we'll update
+      setMessages(curr => [...curr.filter(m => m.content && m.content.trim().length > 0), { role: "assistant", content: "..." }]);
       
       while (true) {
         const { done, value } = await reader.read();
@@ -290,14 +297,22 @@ const Index = () => {
       }
       
       // If no streaming content, try non-streaming fallback
-      if (!assistantContent) {
+      if (!assistantContent || assistantContent === "...") {
         const fallbackResp = await fetch("https://tknpmvtfccepvwegcnfz.supabase.co/functions/v1/health-chat", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ messages: next.slice(-4), language }),
+          body: JSON.stringify({ 
+            messages: next.filter(m => m.content && m.content.trim().length > 0).slice(-4), 
+            language 
+          }),
         });
+        
+        if (!fallbackResp.ok) {
+          throw new Error("Failed to get response");
+        }
+        
         const data = await fallbackResp.json();
-        assistantContent = data?.choices?.[0]?.message?.content || "I'm sorry, I couldn't get an answer right now.";
+        assistantContent = data?.choices?.[0]?.message?.content || "I'm sorry, I couldn't get an answer right now. Please try again.";
         setMessages(curr => {
           const updated = [...curr];
           if (updated.length > 0) {
@@ -307,10 +322,12 @@ const Index = () => {
         });
       }
       
-      speak(assistantContent);
+      if (assistantContent && assistantContent !== "...") {
+        speak(assistantContent);
+      }
       
       // Save conversation to database (only for logged in users)
-      if (user && assistantContent) {
+      if (user && assistantContent && assistantContent !== "...") {
         try {
           await supabase
             .from("user_conversations")
@@ -325,7 +342,9 @@ const Index = () => {
         }
       }
     } catch (e: any) {
-      toast({ title: "Request failed", description: e?.message || String(e) });
+      // Remove the placeholder message on error
+      setMessages(curr => curr.filter(m => m.content !== "..." && m.content.trim().length > 0));
+      toast({ title: "Request failed", description: e?.message || "Please try again." });
     } finally {
       setLoading(false);
     }
@@ -354,12 +373,43 @@ Please explain compassionately and remove any stigma around mental health.`
     
     const prompt = actionPrompts[action];
     if (prompt) {
-      setInput(prompt);
-      // Auto-send the prompt
-      setTimeout(() => {
-        const sendButton = document.querySelector('[data-send-button]') as HTMLButtonElement;
-        if (sendButton) sendButton.click();
-      }, 100);
+      // Directly trigger send with the prompt
+      const cleanMessages = messages.filter(m => m.content && m.content.trim().length > 0);
+      const next = [...cleanMessages, { role: "user", content: prompt } as Message];
+      setMessages(next);
+      setLoading(true);
+      
+      let assistantContent = "";
+      
+      fetch("https://tknpmvtfccepvwegcnfz.supabase.co/functions/v1/health-chat", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          messages: [{ role: "user", content: prompt }],
+          language: language,
+          stream: false,
+        }),
+      })
+        .then(async resp => {
+          if (!resp.ok) throw new Error("Request failed");
+          const data = await resp.json();
+          assistantContent = data?.choices?.[0]?.message?.content || "I'm sorry, I couldn't get information right now.";
+          setMessages(curr => [...curr, { role: "assistant", content: assistantContent }]);
+          speak(assistantContent);
+          
+          if (user && assistantContent) {
+            await supabase.from("user_conversations").insert({
+              user_id: user.id,
+              user_message: prompt,
+              assistant_message: assistantContent,
+              language: language,
+            });
+          }
+        })
+        .catch(e => {
+          toast({ title: "Request failed", description: "Please try again." });
+        })
+        .finally(() => setLoading(false));
     }
   };
 
