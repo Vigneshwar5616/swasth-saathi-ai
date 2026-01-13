@@ -14,6 +14,16 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { useToast } from "@/hooks/use-toast";
 import { useAuth } from "@/contexts/AuthContext";
 import { supabase } from "@/integrations/supabase/client";
+import { useTheme } from "next-themes";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+  DialogTrigger,
+} from "@/components/ui/dialog";
 import { 
   User, 
   CreditCard, 
@@ -26,7 +36,10 @@ import {
   Camera,
   Check,
   Loader2,
-  LogOut
+  LogOut,
+  Download,
+  Trash2,
+  AlertTriangle
 } from "lucide-react";
 
 interface Profile {
@@ -60,9 +73,14 @@ const Settings = () => {
   const navigate = useNavigate();
   const { toast } = useToast();
   const { user, loading: authLoading, signOut } = useAuth();
+  const { setTheme } = useTheme();
   
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
+  const [deleting, setDeleting] = useState(false);
+  const [downloading, setDownloading] = useState(false);
+  const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
+  const [deleteConfirmText, setDeleteConfirmText] = useState("");
   
   // Profile state
   const [profile, setProfile] = useState<Profile>({
@@ -108,6 +126,13 @@ const Settings = () => {
     }
   }, [user]);
 
+  // Apply theme when settings change
+  useEffect(() => {
+    if (settings.theme) {
+      setTheme(settings.theme);
+    }
+  }, [settings.theme, setTheme]);
+
   const loadUserData = async () => {
     if (!user) return;
     
@@ -127,6 +152,15 @@ const Settings = () => {
           phone: profileData.phone || "",
           date_of_birth: profileData.date_of_birth,
           avatar_url: profileData.avatar_url,
+        });
+      } else {
+        // Create profile if doesn't exist
+        setProfile({
+          full_name: user.user_metadata?.full_name || "",
+          email: user.email || "",
+          phone: "",
+          date_of_birth: null,
+          avatar_url: null,
         });
       }
       
@@ -178,16 +212,37 @@ const Settings = () => {
     
     setSaving(true);
     try {
-      const { error } = await supabase
+      // Check if profile exists
+      const { data: existing } = await supabase
         .from("profiles")
-        .update({
-          full_name: profile.full_name,
-          phone: profile.phone,
-          date_of_birth: profile.date_of_birth,
-        })
-        .eq("id", user.id);
+        .select("id")
+        .eq("id", user.id)
+        .single();
       
-      if (error) throw error;
+      if (existing) {
+        const { error } = await supabase
+          .from("profiles")
+          .update({
+            full_name: profile.full_name,
+            phone: profile.phone,
+            date_of_birth: profile.date_of_birth,
+          })
+          .eq("id", user.id);
+        
+        if (error) throw error;
+      } else {
+        const { error } = await supabase
+          .from("profiles")
+          .insert({
+            id: user.id,
+            full_name: profile.full_name,
+            email: profile.email,
+            phone: profile.phone,
+            date_of_birth: profile.date_of_birth,
+          });
+        
+        if (error) throw error;
+      }
       
       toast({
         title: "Profile updated",
@@ -209,22 +264,45 @@ const Settings = () => {
     
     setSaving(true);
     try {
-      const { error } = await supabase
+      // Check if settings exist
+      const { data: existing } = await supabase
         .from("user_settings")
-        .update({
-          preferred_language: settings.preferred_language,
-          voice_enabled: settings.voice_enabled,
-          theme: settings.theme,
-          email_notifications: settings.email_notifications,
-          push_notifications: settings.push_notifications,
-          health_reminders: settings.health_reminders,
-          weekly_summary: settings.weekly_summary,
-          data_collection: settings.data_collection,
-          share_analytics: settings.share_analytics,
-        })
-        .eq("user_id", user.id);
+        .select("id")
+        .eq("user_id", user.id)
+        .single();
       
-      if (error) throw error;
+      const settingsData = {
+        preferred_language: settings.preferred_language,
+        voice_enabled: settings.voice_enabled,
+        theme: settings.theme,
+        email_notifications: settings.email_notifications,
+        push_notifications: settings.push_notifications,
+        health_reminders: settings.health_reminders,
+        weekly_summary: settings.weekly_summary,
+        data_collection: settings.data_collection,
+        share_analytics: settings.share_analytics,
+      };
+      
+      if (existing) {
+        const { error } = await supabase
+          .from("user_settings")
+          .update(settingsData)
+          .eq("user_id", user.id);
+        
+        if (error) throw error;
+      } else {
+        const { error } = await supabase
+          .from("user_settings")
+          .insert({
+            user_id: user.id,
+            ...settingsData,
+          });
+        
+        if (error) throw error;
+      }
+      
+      // Apply theme immediately
+      setTheme(settings.theme);
       
       toast({
         title: "Settings saved",
@@ -238,6 +316,85 @@ const Settings = () => {
       });
     } finally {
       setSaving(false);
+    }
+  };
+
+  const handleDownloadData = async () => {
+    if (!user) return;
+    
+    setDownloading(true);
+    try {
+      // Gather all user data
+      const [profileRes, settingsRes, conversationsRes] = await Promise.all([
+        supabase.from("profiles").select("*").eq("id", user.id).single(),
+        supabase.from("user_settings").select("*").eq("user_id", user.id).single(),
+        supabase.from("user_conversations").select("*").eq("user_id", user.id),
+      ]);
+      
+      const userData = {
+        exportDate: new Date().toISOString(),
+        profile: profileRes.data,
+        settings: settingsRes.data,
+        conversations: conversationsRes.data || [],
+      };
+      
+      // Create and download JSON file
+      const blob = new Blob([JSON.stringify(userData, null, 2)], { type: "application/json" });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = `aarogyasri-data-${new Date().toISOString().split("T")[0]}.json`;
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      URL.revokeObjectURL(url);
+      
+      toast({
+        title: "Download complete",
+        description: "Your data has been downloaded.",
+      });
+    } catch (error: any) {
+      toast({
+        title: "Error",
+        description: error.message || "Failed to download data.",
+        variant: "destructive",
+      });
+    } finally {
+      setDownloading(false);
+    }
+  };
+
+  const handleDeleteAccount = async () => {
+    if (!user || deleteConfirmText !== "DELETE") return;
+    
+    setDeleting(true);
+    try {
+      // Delete user data from all tables
+      await Promise.all([
+        supabase.from("user_conversations").delete().eq("user_id", user.id),
+        supabase.from("user_settings").delete().eq("user_id", user.id),
+        supabase.from("billing_info").delete().eq("user_id", user.id),
+        supabase.from("profiles").delete().eq("id", user.id),
+      ]);
+      
+      // Sign out
+      await signOut();
+      
+      toast({
+        title: "Account deleted",
+        description: "Your account and data have been removed.",
+      });
+      
+      navigate("/");
+    } catch (error: any) {
+      toast({
+        title: "Error",
+        description: error.message || "Failed to delete account.",
+        variant: "destructive",
+      });
+    } finally {
+      setDeleting(false);
+      setDeleteDialogOpen(false);
     }
   };
 
@@ -394,7 +551,10 @@ const Settings = () => {
               
               <Card className="border-destructive/50">
                 <CardHeader>
-                  <CardTitle className="text-destructive">Danger Zone</CardTitle>
+                  <CardTitle className="text-destructive flex items-center gap-2">
+                    <AlertTriangle className="h-5 w-5" />
+                    Danger Zone
+                  </CardTitle>
                   <CardDescription>Irreversible actions for your account</CardDescription>
                 </CardHeader>
                 <CardContent className="space-y-4">
@@ -403,7 +563,48 @@ const Settings = () => {
                       <p className="font-medium">Delete Account</p>
                       <p className="text-sm text-muted-foreground">Permanently delete your account and all data</p>
                     </div>
-                    <Button variant="destructive" size="sm">Delete Account</Button>
+                    <Dialog open={deleteDialogOpen} onOpenChange={setDeleteDialogOpen}>
+                      <DialogTrigger asChild>
+                        <Button variant="destructive" size="sm">
+                          <Trash2 className="h-4 w-4 mr-2" />
+                          Delete Account
+                        </Button>
+                      </DialogTrigger>
+                      <DialogContent>
+                        <DialogHeader>
+                          <DialogTitle className="flex items-center gap-2 text-destructive">
+                            <AlertTriangle className="h-5 w-5" />
+                            Delete Account
+                          </DialogTitle>
+                          <DialogDescription>
+                            This action cannot be undone. This will permanently delete your account and remove all your data from our servers.
+                          </DialogDescription>
+                        </DialogHeader>
+                        <div className="space-y-4 py-4">
+                          <p className="text-sm text-muted-foreground">
+                            Please type <span className="font-bold text-foreground">DELETE</span> to confirm.
+                          </p>
+                          <Input
+                            value={deleteConfirmText}
+                            onChange={(e) => setDeleteConfirmText(e.target.value)}
+                            placeholder="Type DELETE to confirm"
+                          />
+                        </div>
+                        <DialogFooter>
+                          <Button variant="outline" onClick={() => setDeleteDialogOpen(false)}>
+                            Cancel
+                          </Button>
+                          <Button 
+                            variant="destructive" 
+                            onClick={handleDeleteAccount}
+                            disabled={deleteConfirmText !== "DELETE" || deleting}
+                          >
+                            {deleting && <Loader2 className="h-4 w-4 mr-2 animate-spin" />}
+                            Delete Account
+                          </Button>
+                        </DialogFooter>
+                      </DialogContent>
+                    </Dialog>
                   </div>
                 </CardContent>
               </Card>
@@ -615,9 +816,16 @@ const Settings = () => {
                   <div className="flex items-center justify-between">
                     <div>
                       <p className="font-medium">Download Data</p>
-                      <p className="text-sm text-muted-foreground">Get a copy of all your data</p>
+                      <p className="text-sm text-muted-foreground">Get a copy of all your data (profile, settings, conversations)</p>
                     </div>
-                    <Button variant="outline" size="sm">Download</Button>
+                    <Button variant="outline" size="sm" onClick={handleDownloadData} disabled={downloading}>
+                      {downloading ? (
+                        <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                      ) : (
+                        <Download className="h-4 w-4 mr-2" />
+                      )}
+                      Download
+                    </Button>
                   </div>
                 </CardContent>
               </Card>
@@ -692,21 +900,33 @@ const Settings = () => {
                 </CardHeader>
                 <CardContent className="space-y-4">
                   <div className="grid gap-4">
-                    <div className="flex items-center justify-between p-4 border rounded-lg hover:bg-muted/50 cursor-pointer">
+                    <div 
+                      className="flex items-center justify-between p-4 border rounded-lg hover:bg-muted/50 cursor-pointer"
+                      onClick={() => navigate("/help")}
+                    >
                       <div>
                         <p className="font-medium">FAQs</p>
                         <p className="text-sm text-muted-foreground">Frequently asked questions</p>
                       </div>
                       <Button variant="ghost" size="sm">View</Button>
                     </div>
-                    <div className="flex items-center justify-between p-4 border rounded-lg hover:bg-muted/50 cursor-pointer">
+                    <div 
+                      className="flex items-center justify-between p-4 border rounded-lg hover:bg-muted/50 cursor-pointer"
+                      onClick={() => window.location.href = "mailto:arkatalavigneshwar@gmail.com?subject=Aarogyasri Support Request"}
+                    >
                       <div>
                         <p className="font-medium">Contact Support</p>
-                        <p className="text-sm text-muted-foreground">Get help from our team</p>
+                        <p className="text-sm text-muted-foreground">arkatalavigneshwar@gmail.com</p>
                       </div>
-                      <Button variant="ghost" size="sm">Contact</Button>
+                      <Button variant="ghost" size="sm">
+                        <Mail className="h-4 w-4 mr-2" />
+                        Contact
+                      </Button>
                     </div>
-                    <div className="flex items-center justify-between p-4 border rounded-lg hover:bg-muted/50 cursor-pointer">
+                    <div 
+                      className="flex items-center justify-between p-4 border rounded-lg hover:bg-muted/50 cursor-pointer"
+                      onClick={() => navigate("/help")}
+                    >
                       <div>
                         <p className="font-medium">Documentation</p>
                         <p className="text-sm text-muted-foreground">Learn how to use features</p>
@@ -724,6 +944,7 @@ const Settings = () => {
                 <CardContent className="space-y-2">
                   <p className="text-sm text-muted-foreground">Aarogyasri - Your AI Health Assistant</p>
                   <p className="text-sm text-muted-foreground">Version 1.0.0</p>
+                  <p className="text-sm text-muted-foreground">Made with ❤️ in India</p>
                 </CardContent>
               </Card>
             </TabsContent>
