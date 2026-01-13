@@ -69,12 +69,42 @@ RESPONSE FORMAT:
 - Provide the main information with practical tips
 - End with encouragement and care: "Take care of yourself!", "Wishing you good health!"`;
 
+    // Ensure messages alternate properly (user, assistant, user, assistant...)
+    // Perplexity requires this pattern after the system message
+    const userMessages = messages
+      .filter((m: { role: string }) => m.role === "user" || m.role === "assistant")
+      .slice(-4);
+    
+    // Ensure we start with a user message and alternate properly
+    const alternatingMessages: ChatMessage[] = [];
+    let lastRole = "system";
+    
+    for (const msg of userMessages) {
+      // Skip if same role as last (shouldn't happen but safety check)
+      if (msg.role === lastRole) continue;
+      
+      alternatingMessages.push({
+        role: msg.role as "user" | "assistant",
+        content: msg.content
+      });
+      lastRole = msg.role;
+    }
+    
+    // If no valid messages or doesn't start with user, just use the last user message
+    if (alternatingMessages.length === 0 || alternatingMessages[0].role !== "user") {
+      const lastUserMsg = messages.filter((m: { role: string }) => m.role === "user").pop();
+      if (lastUserMsg) {
+        alternatingMessages.length = 0;
+        alternatingMessages.push({
+          role: "user" as const,
+          content: lastUserMsg.content
+        });
+      }
+    }
+
     const finalMessages: ChatMessage[] = [
       { role: "system", content: systemPrompt },
-      ...messages.slice(-4).map((m: { role: string; content: string }) => ({
-        role: m.role as "user" | "assistant",
-        content: m.content
-      })),
+      ...alternatingMessages,
     ];
 
     console.log("Calling Perplexity API...");
