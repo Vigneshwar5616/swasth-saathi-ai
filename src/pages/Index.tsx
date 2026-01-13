@@ -120,8 +120,8 @@ const Index = () => {
     }
   };
 
-  // Enhanced speak function with ElevenLabs natural Indian voices
-  const speak = async (text: string) => {
+  // Enhanced speak function with optimized browser TTS for Indian languages
+  const speak = (text: string) => {
     if (!voice) return;
     
     // Cancel any ongoing speech
@@ -134,49 +134,32 @@ const Index = () => {
       .replace(/#{1,6}\s/g, "") // Remove markdown headers
       .replace(/\n+/g, ". ") // Convert newlines to pauses
       .replace(/\s+/g, " ") // Normalize whitespace
+      .replace(/•/g, ",")   // Replace bullets with pauses
       .trim();
     
-    // Try ElevenLabs first for natural voice
-    try {
-      const response = await fetch("https://tknpmvtfccepvwegcnfz.supabase.co/functions/v1/elevenlabs-tts", {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify({
-          text: cleanText.substring(0, 2000), // Limit for API
-          language: language,
-        }),
-      });
-
-      if (response.ok) {
-        const audioBlob = await response.blob();
-        const audioUrl = URL.createObjectURL(audioBlob);
-        const audio = new Audio(audioUrl);
-        audio.playbackRate = 1.0;
-        await audio.play();
-        return;
-      }
-    } catch (error) {
-      console.warn("ElevenLabs TTS failed, falling back to browser TTS:", error);
-    }
+    // Split into smaller chunks for more natural pacing
+    const chunks = cleanText.match(/[^.!?]+[.!?]+/g) || [cleanText];
     
-    // Fallback to browser TTS
-    const sentences = cleanText.match(/[^.!?]+[.!?]+/g) || [cleanText];
-    
-    sentences.forEach((sentence) => {
-      const utter = new SpeechSynthesisUtterance(sentence.trim());
+    chunks.forEach((chunk, index) => {
+      const utter = new SpeechSynthesisUtterance(chunk.trim());
       
       if (voiceForLang) {
         utter.voice = voiceForLang;
       }
       
       utter.lang = language;
-      utter.rate = 0.85;
-      utter.pitch = 1.1;
+      
+      // Optimized settings for natural Indian speech
+      utter.rate = 0.9;   // Slightly slower for clarity
+      utter.pitch = 1.05; // Subtle warmth
       utter.volume = 1.0;
       
-      synth.speak(utter);
+      // Add small delay between sentences for natural pacing
+      if (index > 0) {
+        setTimeout(() => synth.speak(utter), index * 100);
+      } else {
+        synth.speak(utter);
+      }
     });
   };
 
