@@ -21,8 +21,8 @@ Deno.serve(async (req) => {
   }
 
   try {
-    const { messages, language } = await req.json();
-    console.log("Received request with language:", language, "messages count:", messages?.length);
+    const { messages, language, stream = false } = await req.json();
+    console.log("Received request with language:", language, "stream:", stream);
 
     if (!Array.isArray(messages) || messages.length === 0) {
       return new Response(JSON.stringify({ error: "Missing messages" }), {
@@ -40,34 +40,17 @@ Deno.serve(async (req) => {
       });
     }
 
-    const systemPrompt = `You are Aarogyasri, a warm and caring health advisor from India - like a knowledgeable family doctor or trusted elder who genuinely cares about people's wellbeing.
+    // Shortened system prompt for faster responses
+    const systemPrompt = `You are Aarogyasri, a warm Indian health advisor. Be concise but caring.
 
-Your personality:
-- Speak naturally and warmly, like you're having a friendly chai-time conversation
-- Use gentle, reassuring language - "Don't worry, let me explain..." or "I understand your concern..."
-- Add cultural touches - mention home remedies when appropriate (haldi doodh for cold, tulsi for immunity)
-- Use relatable examples from everyday Indian life
-- Show empathy first, then provide information
-
-Communication style:
-- Start responses with acknowledgment: "Ah, I see..." or "That's a good question!"
-- Use conversational phrases: "You know what helps?", "Here's a simple tip...", "Many people find that..."
-- End with encouragement: "Take care of yourself!", "Wishing you good health!", "Feel better soon!"
-- Keep explanations simple, like explaining to a family member
-- Speak in the user's language (${language || "auto"}) naturally, mixing common English medical terms when helpful
-
-Guidelines:
-- Share reliable health tips and lifestyle suggestions warmly
-- Always recommend consulting a doctor for serious concerns - but say it caringly: "It would be wise to visit your doctor, just to be safe"
-- For minor issues, suggest practical home care first
-- Mention when something needs urgent attention, but calmly
-- Reference trusted sources naturally: "According to our health ministry..." or "Doctors generally recommend..."
-
-Remember: You're not just giving information - you're supporting someone who may be worried about their health. Be the reassuring, knowledgeable friend everyone deserves.`;
+Style: Friendly, conversational. Use "Don't worry...", "Here's a tip..." Mix Hindi/regional phrases naturally.
+Format: Keep responses under 150 words. Use bullet points for multiple tips.
+Rules: Recommend doctors for serious issues. Suggest home remedies for minor ones. Speak in ${language || "English"}.
+End with: Brief encouragement like "Take care!" or "Feel better soon!"`;
 
     const finalMessages: ChatMessage[] = [
       { role: "system", content: systemPrompt },
-      ...messages.map((m: { role: string; content: string }) => ({
+      ...messages.slice(-4).map((m: { role: string; content: string }) => ({
         role: m.role as "user" | "assistant",
         content: m.content
       })),
@@ -84,9 +67,9 @@ Remember: You're not just giving information - you're supporting someone who may
       body: JSON.stringify({
         model: "sonar",
         messages: finalMessages,
-        temperature: 0.2,
-        top_p: 0.9,
-        max_tokens: 800,
+        temperature: 0.3,
+        max_tokens: 400,
+        stream: stream,
       }),
     });
 
@@ -99,8 +82,15 @@ Remember: You're not just giving information - you're supporting someone who may
       );
     }
 
+    // If streaming, pass through the stream directly
+    if (stream) {
+      return new Response(response.body, {
+        headers: { ...corsHeaders, "Content-Type": "text/event-stream" },
+      });
+    }
+
     const data = await response.json();
-    console.log("Perplexity API response received successfully");
+    console.log("Perplexity API response received");
     
     return new Response(JSON.stringify(data), {
       headers: { ...corsHeaders, "Content-Type": "application/json" },
