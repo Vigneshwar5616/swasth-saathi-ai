@@ -167,7 +167,16 @@ export function AppSidebar() {
                 </DropdownMenuItem>
               </DropdownMenuContent>
             </DropdownMenu>
-          ) : null}
+          ) : (
+            <Button 
+              variant="default" 
+              className="w-full justify-start gap-3"
+              onClick={() => navigate("/auth")}
+            >
+              <LogIn className="w-4 h-4" />
+              Sign In
+            </Button>
+          )}
         </div>
       </SidebarFooter>
     </Sidebar>
