@@ -1,7 +1,8 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useCallback } from "react";
 import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
+import useEmblaCarousel from "embla-carousel-react";
 import { 
   ChevronLeft, 
   ChevronRight, 
@@ -161,37 +162,54 @@ const healthTips = [
 ];
 
 export function HealthTipsCarousel() {
+  const [emblaRef, emblaApi] = useEmblaCarousel({ 
+    loop: true,
+    dragFree: false,
+  });
   const [currentIndex, setCurrentIndex] = useState(0);
   const [isAutoPlaying, setIsAutoPlaying] = useState(true);
 
+  const onSelect = useCallback(() => {
+    if (!emblaApi) return;
+    setCurrentIndex(emblaApi.selectedScrollSnap());
+  }, [emblaApi]);
+
+  useEffect(() => {
+    if (!emblaApi) return;
+    emblaApi.on("select", onSelect);
+    emblaApi.on("pointerDown", () => setIsAutoPlaying(false));
+    return () => {
+      emblaApi.off("select", onSelect);
+    };
+  }, [emblaApi, onSelect]);
+
   // Auto-rotate tips every 5 seconds
   useEffect(() => {
-    if (!isAutoPlaying) return;
+    if (!isAutoPlaying || !emblaApi) return;
     
     const interval = setInterval(() => {
-      setCurrentIndex((prev) => (prev + 1) % healthTips.length);
+      emblaApi.scrollNext();
     }, 5000);
 
     return () => clearInterval(interval);
-  }, [isAutoPlaying]);
+  }, [isAutoPlaying, emblaApi]);
 
-  const goToPrevious = () => {
+  const goToPrevious = useCallback(() => {
     setIsAutoPlaying(false);
-    setCurrentIndex((prev) => (prev - 1 + healthTips.length) % healthTips.length);
-  };
+    emblaApi?.scrollPrev();
+  }, [emblaApi]);
 
-  const goToNext = () => {
+  const goToNext = useCallback(() => {
     setIsAutoPlaying(false);
-    setCurrentIndex((prev) => (prev + 1) % healthTips.length);
-  };
+    emblaApi?.scrollNext();
+  }, [emblaApi]);
 
-  const goToSlide = (index: number) => {
+  const goToSlide = useCallback((index: number) => {
     setIsAutoPlaying(false);
-    setCurrentIndex(index);
-  };
+    emblaApi?.scrollTo(index);
+  }, [emblaApi]);
 
   const currentTip = healthTips[currentIndex];
-  const IconComponent = currentTip.icon;
 
   return (
     <div className="space-y-4">
@@ -220,52 +238,67 @@ export function HealthTipsCarousel() {
       <Card className="overflow-hidden border-border bg-card shadow-sm hover:shadow-md transition-shadow duration-300">
         <CardContent className="p-0">
           <div 
-            className={`relative p-6 bg-gradient-to-br ${currentTip.gradient} transition-all duration-500`}
+            className="overflow-hidden cursor-grab active:cursor-grabbing"
+            ref={emblaRef}
             onMouseEnter={() => setIsAutoPlaying(false)}
             onMouseLeave={() => setIsAutoPlaying(true)}
           >
-            <div className="flex items-start gap-4 animate-fade-in" key={currentTip.id}>
-              <div className="shrink-0 w-14 h-14 rounded-2xl bg-background/80 backdrop-blur-sm flex items-center justify-center shadow-sm">
-                <IconComponent className="w-7 h-7 text-primary" />
-              </div>
-              <div className="flex-1 min-w-0">
-                <div className="flex items-center gap-2 mb-2 flex-wrap">
-                  <h3 className="font-semibold text-foreground">{currentTip.title}</h3>
-                  <Badge variant="outline" className="text-xs bg-background/60 border-primary/30 text-primary">
-                    {currentTip.category}
-                  </Badge>
-                </div>
-                <p className="text-sm text-foreground/80 leading-relaxed mb-3">{currentTip.tip}</p>
-                <div className="flex items-start gap-2 p-2 rounded-lg bg-background/50 border border-primary/10">
-                  <Sparkles className="w-4 h-4 text-accent shrink-0 mt-0.5" />
-                  <p className="text-xs text-muted-foreground italic">
-                    <span className="font-medium text-accent">Did you know?</span> {currentTip.fact}
-                  </p>
-                </div>
-              </div>
+            <div className="flex">
+              {healthTips.map((tip) => {
+                const IconComponent = tip.icon;
+                return (
+                  <div 
+                    key={tip.id}
+                    className="flex-[0_0_100%] min-w-0"
+                  >
+                    <div className={`relative p-6 bg-gradient-to-br ${tip.gradient} transition-all duration-500`}>
+                      <div className="flex items-start gap-4">
+                        <div className="shrink-0 w-14 h-14 rounded-2xl bg-background/80 backdrop-blur-sm flex items-center justify-center shadow-sm">
+                          <IconComponent className="w-7 h-7 text-primary" />
+                        </div>
+                        <div className="flex-1 min-w-0">
+                          <div className="flex items-center gap-2 mb-2 flex-wrap">
+                            <h3 className="font-semibold text-foreground">{tip.title}</h3>
+                            <Badge variant="outline" className="text-xs bg-background/60 border-primary/30 text-primary">
+                              {tip.category}
+                            </Badge>
+                          </div>
+                          <p className="text-sm text-foreground/80 leading-relaxed mb-3">{tip.tip}</p>
+                          <div className="flex items-start gap-2 p-2 rounded-lg bg-background/50 border border-primary/10">
+                            <Sparkles className="w-4 h-4 text-accent shrink-0 mt-0.5" />
+                            <p className="text-xs text-muted-foreground italic">
+                              <span className="font-medium text-accent">Did you know?</span> {tip.fact}
+                            </p>
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                );
+              })}
             </div>
+          </div>
 
-            {/* Progress dots */}
-            <div className="flex items-center justify-center gap-1.5 mt-5">
-              {healthTips.map((_, index) => (
-                <button
-                  key={index}
-                  onClick={() => goToSlide(index)}
-                  className={`h-1.5 rounded-full transition-all duration-300 ${
-                    index === currentIndex 
-                      ? "w-6 bg-primary" 
-                      : "w-1.5 bg-primary/30 hover:bg-primary/50"
-                  }`}
-                  aria-label={`Go to tip ${index + 1}`}
-                />
-              ))}
-            </div>
+          {/* Progress dots */}
+          <div className="flex items-center justify-center gap-1.5 py-4 bg-card">
+            {healthTips.map((_, index) => (
+              <button
+                key={index}
+                onClick={() => goToSlide(index)}
+                className={`h-1.5 rounded-full transition-all duration-300 ${
+                  index === currentIndex 
+                    ? "w-6 bg-primary" 
+                    : "w-1.5 bg-primary/30 hover:bg-primary/50"
+                }`}
+                aria-label={`Go to tip ${index + 1}`}
+              />
+            ))}
           </div>
         </CardContent>
       </Card>
 
       <p className="text-xs text-center text-muted-foreground">
-        🧬 Tip {currentIndex + 1} of {healthTips.length} • Science-backed wellness insights • Auto-advances every 5s
+        👆 Swipe to browse • Tip {currentIndex + 1} of {healthTips.length} • Auto-advances every 5s
       </p>
     </div>
   );
