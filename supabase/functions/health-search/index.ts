@@ -15,7 +15,6 @@ const MAX_QUERY_LENGTH = 500;
 
 // Rate limiting configuration
 const RATE_LIMIT_WINDOW_MS = 60 * 1000; // 1 minute
-const ANONYMOUS_RATE_LIMIT = 10; // 10 requests per minute for anonymous users
 const AUTHENTICATED_RATE_LIMIT = 60; // 60 requests per minute for authenticated users
 
 // In-memory rate limit store (resets on function cold start)
@@ -159,29 +158,36 @@ Deno.serve(async (req) => {
     let userId: string | undefined;
     let rateLimit = ANONYMOUS_RATE_LIMIT;
     
-    // Check for authentication
+    // Check for authentication - REQUIRED
     const authHeader = req.headers.get('authorization');
-    if (authHeader?.startsWith('Bearer ')) {
-      try {
-        const supabaseUrl = Deno.env.get('SUPABASE_URL')!;
-        const supabaseAnonKey = Deno.env.get('SUPABASE_ANON_KEY')!;
-        
-        const supabase = createClient(supabaseUrl, supabaseAnonKey, {
-          global: { headers: { Authorization: authHeader } }
-        });
-        
-        const token = authHeader.replace('Bearer ', '');
-        const { data, error } = await supabase.auth.getClaims(token);
-        
-        if (!error && data?.claims?.sub) {
-          userId = data.claims.sub;
-          rateLimit = AUTHENTICATED_RATE_LIMIT;
-          console.log("Authenticated user:", userId);
-        }
-      } catch (authError) {
-        console.log("Auth check failed, continuing as anonymous:", authError);
-      }
+    if (!authHeader?.startsWith('Bearer ')) {
+      return new Response(
+        JSON.stringify({ error: "Authentication required", results: [] }),
+        { status: 401, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+      );
     }
+    
+    const supabaseUrl = Deno.env.get('SUPABASE_URL')!;
+    const supabaseAnonKey = Deno.env.get('SUPABASE_ANON_KEY')!;
+    
+    const supabase = createClient(supabaseUrl, supabaseAnonKey, {
+      global: { headers: { Authorization: authHeader } }
+    });
+    
+    const token = authHeader.replace('Bearer ', '');
+    const { data, error } = await supabase.auth.getClaims(token);
+    
+    if (error || !data?.claims?.sub) {
+      console.log("Auth validation failed:", error);
+      return new Response(
+        JSON.stringify({ error: "Invalid authentication token", results: [] }),
+        { status: 401, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+      );
+    }
+    
+    userId = data.claims.sub;
+    rateLimit = AUTHENTICATED_RATE_LIMIT;
+    console.log("Authenticated user:", userId);
     
     // Apply rate limiting
     const rateLimitKey = getRateLimitKey(clientIP, userId);

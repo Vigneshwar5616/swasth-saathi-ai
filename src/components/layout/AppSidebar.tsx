@@ -33,7 +33,7 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
-import { useEffect, useCallback } from "react";
+import { useEffect } from "react";
 import { useIsMobile } from "@/hooks/use-mobile";
 
 const navigationItems = [
@@ -48,7 +48,7 @@ const footerItems = [
 
 export function AppSidebar() {
   const { user, signOut } = useAuth();
-  const { isAdminMode, checkAdminAccess, toggleAdminMode } = useAdmin();
+  const { isAdminMode, toggleAdminMode } = useAdmin();
   const { setOpenMobile, setOpen } = useSidebar();
   const isMobile = useIsMobile();
   const navigate = useNavigate();
@@ -63,16 +63,8 @@ export function AppSidebar() {
     }
   }, [location.pathname, isMobile, setOpenMobile, setOpen]);
 
-  // Listen for secret key sequence
-  const handleKeyDown = useCallback((e: KeyboardEvent) => {
-    if (e.ctrlKey || e.metaKey || e.altKey) return;
-    checkAdminAccess([e.key.toLowerCase()]);
-  }, [checkAdminAccess]);
-
-  useEffect(() => {
-    window.addEventListener("keydown", handleKeyDown);
-    return () => window.removeEventListener("keydown", handleKeyDown);
-  }, [handleKeyDown]);
+  // Keyboard sequence for admin mode is now disabled
+  // Admin mode is automatically enabled for users with admin role in database
 
   const handleSignOut = async () => {
     await signOut();
