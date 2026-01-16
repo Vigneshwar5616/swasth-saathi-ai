@@ -4,6 +4,8 @@ import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { useTheme } from "next-themes";
 import { cn } from "@/lib/utils";
+import { useAuth } from "@/contexts/AuthContext";
+import { supabase } from "@/integrations/supabase/client";
 
 interface SearchResult {
   title: string;
@@ -35,6 +37,7 @@ const categoryColors: Record<string, string> = {
 
 export function DashboardHeader({ searchQuery, onSearchChange, onSearchSelect }: DashboardHeaderProps) {
   const { theme, setTheme } = useTheme();
+  const { user } = useAuth();
   const [results, setResults] = useState<SearchResult[]>([]);
   const [loading, setLoading] = useState(false);
   const [showResults, setShowResults] = useState(false);
@@ -65,11 +68,29 @@ export function DashboardHeader({ searchQuery, onSearchChange, onSearchSelect }:
     }
 
     debounceRef.current = setTimeout(async () => {
+      // Only search if user is authenticated
+      if (!user) {
+        setResults([]);
+        setShowResults(false);
+        return;
+      }
+      
       setLoading(true);
       try {
+        const { data: { session } } = await supabase.auth.getSession();
+        if (!session?.access_token) {
+          console.log("No active session for search");
+          setResults([]);
+          setShowResults(false);
+          return;
+        }
+        
         const resp = await fetch("https://tknpmvtfccepvwegcnfz.supabase.co/functions/v1/health-search", {
           method: "POST",
-          headers: { "Content-Type": "application/json" },
+          headers: { 
+            "Content-Type": "application/json",
+            "Authorization": `Bearer ${session.access_token}`
+          },
           body: JSON.stringify({ query: searchQuery }),
         });
         
@@ -77,6 +98,9 @@ export function DashboardHeader({ searchQuery, onSearchChange, onSearchSelect }:
           const data = await resp.json();
           setResults(data.results || []);
           setShowResults(true);
+        } else if (resp.status === 401) {
+          console.log("Search requires authentication");
+          setResults([]);
         }
       } catch (error) {
         console.error("Search error:", error);
