@@ -10,6 +10,7 @@ import { AdminProvider } from "@/contexts/AdminContext";
 import Index from "./pages/Index";
 import Settings from "./pages/Settings";
 import Auth from "./pages/Auth";
+import ResetPassword from "./pages/ResetPassword";
 import History from "./pages/History";
 import Help from "./pages/Help";
 import Install from "./pages/Install";
@@ -35,6 +36,7 @@ const App = () => (
                 <Routes>
                   <Route path="/" element={<Index />} />
                   <Route path="/auth" element={<Auth />} />
+                  <Route path="/reset-password" element={<ResetPassword />} />
                   <Route path="/settings" element={<Settings />} />
                   <Route path="/history" element={<History />} />
                   <Route path="/help" element={<Help />} />
