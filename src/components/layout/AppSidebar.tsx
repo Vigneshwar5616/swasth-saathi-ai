@@ -49,17 +49,19 @@ const footerItems = [
 export function AppSidebar() {
   const { user, signOut } = useAuth();
   const { isAdminMode, checkAdminAccess, toggleAdminMode } = useAdmin();
-  const { setOpenMobile } = useSidebar();
+  const { setOpenMobile, setOpen } = useSidebar();
   const isMobile = useIsMobile();
   const navigate = useNavigate();
   const location = useLocation();
 
-  // Auto-close sidebar on mobile when route changes
+  // Auto-collapse sidebar when route changes
   useEffect(() => {
     if (isMobile) {
       setOpenMobile(false);
+    } else {
+      setOpen(false);
     }
-  }, [location.pathname, isMobile, setOpenMobile]);
+  }, [location.pathname, isMobile, setOpenMobile, setOpen]);
 
   // Listen for secret key sequence
   const handleKeyDown = useCallback((e: KeyboardEvent) => {
