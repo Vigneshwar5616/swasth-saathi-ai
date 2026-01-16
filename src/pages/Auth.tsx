@@ -11,7 +11,6 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { useToast } from "@/hooks/use-toast";
 import { Heart, Loader2, Mail, Lock, User } from "lucide-react";
 import { z } from "zod";
-import { saveCredentials, loadCredentials, clearCredentials } from "@/utils/credentialStorage";
 
 const emailSchema = z.string().email("Please enter a valid email address");
 const passwordSchema = z.string().min(6, "Password must be at least 6 characters");
@@ -29,20 +28,6 @@ const Auth = () => {
   const [resetLoading, setResetLoading] = useState(false);
   const [showForgotPassword, setShowForgotPassword] = useState(false);
   const [errors, setErrors] = useState<{ email?: string; password?: string }>({});
-  const [credentialsLoaded, setCredentialsLoaded] = useState(false);
-
-  // Load saved credentials on mount
-  useEffect(() => {
-    if (!credentialsLoaded) {
-      const saved = loadCredentials();
-      if (saved) {
-        setEmail(saved.email);
-        setPassword(saved.password);
-        setRememberMe(true);
-      }
-      setCredentialsLoaded(true);
-    }
-  }, [credentialsLoaded]);
 
   // Redirect if already logged in
   useEffect(() => {
@@ -85,12 +70,7 @@ const Auth = () => {
       }
       toast({ title: "Sign in failed", description: message, variant: "destructive" });
     } else {
-      // Save credentials if "Remember Me" is checked
-      if (rememberMe) {
-        saveCredentials(email, password);
-      } else {
-        clearCredentials();
-      }
+      // Session persistence is handled by Supabase's built-in session management
       toast({ title: "Welcome back!", description: "You have successfully signed in." });
     }
   };
