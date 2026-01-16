@@ -6,7 +6,8 @@ import {
   Heart,
   LogIn,
   LogOut,
-  User
+  User,
+  Shield
 } from "lucide-react";
 import { NavLink, useNavigate } from "react-router-dom";
 import {
@@ -22,6 +23,7 @@ import {
 } from "@/components/ui/sidebar";
 import { cn } from "@/lib/utils";
 import { useAuth } from "@/contexts/AuthContext";
+import { useAdmin } from "@/contexts/AdminContext";
 import { Button } from "@/components/ui/button";
 import {
   DropdownMenu,
@@ -30,6 +32,7 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
+import { useEffect, useCallback } from "react";
 
 const navigationItems = [
   { title: "Chat", url: "/", icon: MessageCircle },
@@ -43,7 +46,19 @@ const footerItems = [
 
 export function AppSidebar() {
   const { user, signOut } = useAuth();
+  const { isAdminMode, checkAdminAccess, toggleAdminMode } = useAdmin();
   const navigate = useNavigate();
+
+  // Listen for secret key sequence
+  const handleKeyDown = useCallback((e: KeyboardEvent) => {
+    if (e.ctrlKey || e.metaKey || e.altKey) return;
+    checkAdminAccess([e.key.toLowerCase()]);
+  }, [checkAdminAccess]);
+
+  useEffect(() => {
+    window.addEventListener("keydown", handleKeyDown);
+    return () => window.removeEventListener("keydown", handleKeyDown);
+  }, [handleKeyDown]);
 
   const handleSignOut = async () => {
     await signOut();
@@ -160,6 +175,18 @@ export function AppSidebar() {
                   <Settings className="w-4 h-4 mr-2" />
                   Preferences
                 </DropdownMenuItem>
+                {isAdminMode && (
+                  <>
+                    <DropdownMenuSeparator />
+                    <DropdownMenuItem 
+                      onClick={toggleAdminMode}
+                      className="text-primary focus:text-primary"
+                    >
+                      <Shield className="w-4 h-4 mr-2" />
+                      Exit Admin Mode
+                    </DropdownMenuItem>
+                  </>
+                )}
                 <DropdownMenuSeparator />
                 <DropdownMenuItem onClick={handleSignOut} className="text-destructive focus:text-destructive">
                   <LogOut className="w-4 h-4 mr-2" />
