@@ -1,12 +1,19 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useCallback } from "react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
-import { Download, Smartphone, CheckCircle, Share, Plus, MoreVertical } from "lucide-react";
+import { Download, Smartphone, CheckCircle, Share, Plus, MoreVertical, RefreshCw, ExternalLink } from "lucide-react";
 import { useNavigate } from "react-router-dom";
+import { toast } from "sonner";
 
 interface BeforeInstallPromptEvent extends Event {
   prompt: () => Promise<void>;
   userChoice: Promise<{ outcome: "accepted" | "dismissed" }>;
+}
+
+declare global {
+  interface WindowEventMap {
+    beforeinstallprompt: BeforeInstallPromptEvent;
+  }
 }
 
 const Install = () => {
@@ -15,64 +22,121 @@ const Install = () => {
   const [isInstalled, setIsInstalled] = useState(false);
   const [isIOS, setIsIOS] = useState(false);
   const [isAndroid, setIsAndroid] = useState(false);
+  const [isStandalone, setIsStandalone] = useState(false);
+  const [isInstalling, setIsInstalling] = useState(false);
+  const [showManualInstructions, setShowManualInstructions] = useState(false);
+
+  const checkIfInstalled = useCallback(() => {
+    // Check multiple ways if app is installed
+    const isStandaloneMode = window.matchMedia("(display-mode: standalone)").matches;
+    const isInWebAppiOS = (navigator as any).standalone === true;
+    const isFullscreen = window.matchMedia("(display-mode: fullscreen)").matches;
+    
+    return isStandaloneMode || isInWebAppiOS || isFullscreen;
+  }, []);
 
   useEffect(() => {
     // Check if already installed
-    if (window.matchMedia("(display-mode: standalone)").matches) {
-      setIsInstalled(true);
-    }
+    const installed = checkIfInstalled();
+    setIsInstalled(installed);
+    setIsStandalone(installed);
 
     // Detect platform
     const userAgent = navigator.userAgent.toLowerCase();
-    setIsIOS(/iphone|ipad|ipod/.test(userAgent));
-    setIsAndroid(/android/.test(userAgent));
+    const isIOSDevice = /iphone|ipad|ipod/.test(userAgent) && !(window as any).MSStream;
+    const isAndroidDevice = /android/.test(userAgent);
+    
+    setIsIOS(isIOSDevice);
+    setIsAndroid(isAndroidDevice);
 
-    // Listen for install prompt
-    const handleBeforeInstallPrompt = (e: Event) => {
+    // For iOS, we can't use beforeinstallprompt, show manual instructions after delay
+    if (isIOSDevice) {
+      setTimeout(() => setShowManualInstructions(true), 500);
+    }
+
+    // Listen for install prompt (works on Android Chrome, Edge, etc.)
+    const handleBeforeInstallPrompt = (e: BeforeInstallPromptEvent) => {
+      console.log("beforeinstallprompt event fired");
       e.preventDefault();
-      setDeferredPrompt(e as BeforeInstallPromptEvent);
+      setDeferredPrompt(e);
+      setShowManualInstructions(false);
+    };
+
+    // Listen for successful install
+    const handleAppInstalled = () => {
+      console.log("App was installed");
+      setIsInstalled(true);
+      setDeferredPrompt(null);
+      toast.success("App installed successfully!");
     };
 
     window.addEventListener("beforeinstallprompt", handleBeforeInstallPrompt);
+    window.addEventListener("appinstalled", handleAppInstalled);
 
-    // Listen for successful install
-    window.addEventListener("appinstalled", () => {
-      setIsInstalled(true);
-      setDeferredPrompt(null);
-    });
+    // If no prompt after 3 seconds on Android, show manual instructions
+    const timeoutId = setTimeout(() => {
+      if (!deferredPrompt && isAndroidDevice && !installed) {
+        setShowManualInstructions(true);
+      }
+    }, 3000);
 
     return () => {
       window.removeEventListener("beforeinstallprompt", handleBeforeInstallPrompt);
+      window.removeEventListener("appinstalled", handleAppInstalled);
+      clearTimeout(timeoutId);
     };
-  }, []);
+  }, [checkIfInstalled, deferredPrompt]);
 
   const handleInstall = async () => {
-    if (!deferredPrompt) return;
-
-    await deferredPrompt.prompt();
-    const { outcome } = await deferredPrompt.userChoice;
-
-    if (outcome === "accepted") {
-      setIsInstalled(true);
+    if (!deferredPrompt) {
+      setShowManualInstructions(true);
+      return;
     }
-    setDeferredPrompt(null);
+
+    try {
+      setIsInstalling(true);
+      await deferredPrompt.prompt();
+      const { outcome } = await deferredPrompt.userChoice;
+
+      if (outcome === "accepted") {
+        setIsInstalled(true);
+        toast.success("Installing Aarogyasri...");
+      } else {
+        toast.info("Installation cancelled. You can install anytime from this page.");
+      }
+    } catch (error) {
+      console.error("Install error:", error);
+      toast.error("Installation failed. Please try the manual method below.");
+      setShowManualInstructions(true);
+    } finally {
+      setIsInstalling(false);
+      setDeferredPrompt(null);
+    }
   };
 
-  if (isInstalled) {
+  const handleRefresh = () => {
+    window.location.reload();
+  };
+
+  if (isInstalled || isStandalone) {
     return (
-      <div className="min-h-screen bg-background flex items-center justify-center p-4">
-        <Card className="w-full max-w-md text-center">
-          <CardHeader>
-            <div className="mx-auto w-16 h-16 bg-accent/20 rounded-full flex items-center justify-center mb-4">
-              <CheckCircle className="w-8 h-8 text-accent" />
+      <div className="min-h-screen bg-gradient-to-b from-primary/5 to-background flex items-center justify-center p-4">
+        <Card className="w-full max-w-md text-center border-2 border-accent/20 shadow-xl">
+          <CardHeader className="pb-4">
+            <div className="mx-auto w-20 h-20 bg-gradient-to-br from-accent to-primary rounded-full flex items-center justify-center mb-4 shadow-lg">
+              <CheckCircle className="w-10 h-10 text-white" />
             </div>
-            <CardTitle className="text-2xl">Already Installed!</CardTitle>
-            <CardDescription>
-              Aarogyasri is already installed on your device
+            <CardTitle className="text-2xl font-bold">Already Installed!</CardTitle>
+            <CardDescription className="text-base">
+              Aarogyasri is ready on your device
             </CardDescription>
           </CardHeader>
-          <CardContent>
-            <Button onClick={() => navigate("/")} className="w-full">
+          <CardContent className="space-y-4">
+            <p className="text-sm text-muted-foreground">
+              Look for the Aarogyasri icon on your home screen
+            </p>
+            <Button onClick={() => navigate("/")} className="w-full" size="lg">
+              <ExternalLink className="w-5 h-5 mr-2" />
               Open App
             </Button>
           </CardContent>
@@ -82,91 +146,159 @@ const Install = () => {
   }
 
   return (
-    <div className="min-h-screen bg-background flex items-center justify-center p-4">
-      <Card className="w-full max-w-md">
-        <CardHeader className="text-center">
-          <div className="mx-auto w-20 h-20 bg-gradient-to-br from-primary to-accent rounded-2xl flex items-center justify-center mb-4 shadow-lg">
-            <Smartphone className="w-10 h-10 text-white" />
+    <div className="min-h-screen bg-gradient-to-b from-primary/5 to-background flex items-center justify-center p-4">
+      <Card className="w-full max-w-md border-2 shadow-xl">
+        <CardHeader className="text-center pb-4">
+          <div className="mx-auto w-24 h-24 bg-gradient-to-br from-primary via-primary to-accent rounded-2xl flex items-center justify-center mb-4 shadow-xl transform hover:scale-105 transition-transform">
+            <Smartphone className="w-12 h-12 text-white" />
           </div>
-          <CardTitle className="text-2xl">Install Aarogyasri</CardTitle>
-          <CardDescription>
-            Get quick access to your health assistant right from your home screen
+          <CardTitle className="text-2xl font-bold">Install Aarogyasri</CardTitle>
+          <CardDescription className="text-base">
+            Your AI Health Assistant - Always Available
           </CardDescription>
         </CardHeader>
+        
         <CardContent className="space-y-6">
           {/* Benefits */}
-          <div className="space-y-3">
-            <div className="flex items-center gap-3 text-sm">
-              <CheckCircle className="w-5 h-5 text-accent flex-shrink-0" />
-              <span>Works offline - access anytime</span>
-            </div>
-            <div className="flex items-center gap-3 text-sm">
-              <CheckCircle className="w-5 h-5 text-accent flex-shrink-0" />
-              <span>Fast loading - like a native app</span>
-            </div>
-            <div className="flex items-center gap-3 text-sm">
-              <CheckCircle className="w-5 h-5 text-accent flex-shrink-0" />
-              <span>No app store needed</span>
-            </div>
-            <div className="flex items-center gap-3 text-sm">
-              <CheckCircle className="w-5 h-5 text-accent flex-shrink-0" />
-              <span>Voice & text support in Indian languages</span>
+          <div className="bg-muted/50 rounded-xl p-4 space-y-3">
+            <p className="font-semibold text-sm text-foreground">Why install?</p>
+            <div className="grid gap-2">
+              {[
+                "Works offline - access anytime",
+                "Lightning fast - like a native app",
+                "No app store or downloads needed",
+                "Voice support in 10+ Indian languages"
+              ].map((benefit, i) => (
+                <div key={i} className="flex items-center gap-3 text-sm">
+                  <CheckCircle className="w-4 h-4 text-accent flex-shrink-0" />
+                  <span className="text-muted-foreground">{benefit}</span>
+                </div>
+              ))}
             </div>
           </div>
 
-          {/* Install Instructions */}
-          {deferredPrompt ? (
-            <Button onClick={handleInstall} className="w-full" size="lg">
-              <Download className="w-5 h-5 mr-2" />
-              Install Now
+          {/* Install Button - Always show if we have deferred prompt */}
+          {deferredPrompt && (
+            <Button 
+              onClick={handleInstall} 
+              className="w-full h-14 text-lg font-semibold shadow-lg" 
+              size="lg"
+              disabled={isInstalling}
+            >
+              {isInstalling ? (
+                <>
+                  <RefreshCw className="w-5 h-5 mr-2 animate-spin" />
+                  Installing...
+                </>
+              ) : (
+                <>
+                  <Download className="w-5 h-5 mr-2" />
+                  Install Now - Free
+                </>
+              )}
             </Button>
-          ) : isIOS ? (
-            <div className="bg-muted rounded-lg p-4 space-y-3">
-              <p className="font-medium text-sm">Install on iOS:</p>
-              <ol className="text-sm space-y-2 text-muted-foreground">
-                <li className="flex items-start gap-2">
-                  <span className="bg-primary text-primary-foreground rounded-full w-5 h-5 flex items-center justify-center text-xs flex-shrink-0">1</span>
-                  <span>Tap the <Share className="w-4 h-4 inline mx-1" /> Share button in Safari</span>
+          )}
+
+          {/* iOS Instructions */}
+          {isIOS && (
+            <div className="bg-gradient-to-br from-muted to-muted/50 rounded-xl p-5 space-y-4 border">
+              <div className="flex items-center gap-2">
+                <div className="w-8 h-8 bg-primary/10 rounded-lg flex items-center justify-center">
+                  <Share className="w-4 h-4 text-primary" />
+                </div>
+                <p className="font-semibold">Install on iPhone/iPad</p>
+              </div>
+              <ol className="space-y-3">
+                <li className="flex items-start gap-3">
+                  <span className="bg-primary text-primary-foreground rounded-full w-6 h-6 flex items-center justify-center text-sm font-bold flex-shrink-0">1</span>
+                  <div>
+                    <span className="font-medium">Tap Share</span>
+                    <p className="text-sm text-muted-foreground">Tap the <Share className="w-4 h-4 inline mx-1 text-primary" /> button at the bottom of Safari</p>
+                  </div>
                 </li>
-                <li className="flex items-start gap-2">
-                  <span className="bg-primary text-primary-foreground rounded-full w-5 h-5 flex items-center justify-center text-xs flex-shrink-0">2</span>
-                  <span>Scroll and tap <Plus className="w-4 h-4 inline mx-1" /> "Add to Home Screen"</span>
+                <li className="flex items-start gap-3">
+                  <span className="bg-primary text-primary-foreground rounded-full w-6 h-6 flex items-center justify-center text-sm font-bold flex-shrink-0">2</span>
+                  <div>
+                    <span className="font-medium">Add to Home Screen</span>
+                    <p className="text-sm text-muted-foreground">Scroll down and tap <Plus className="w-4 h-4 inline mx-1 text-primary" /> "Add to Home Screen"</p>
+                  </div>
                 </li>
-                <li className="flex items-start gap-2">
-                  <span className="bg-primary text-primary-foreground rounded-full w-5 h-5 flex items-center justify-center text-xs flex-shrink-0">3</span>
-                  <span>Tap "Add" to confirm</span>
+                <li className="flex items-start gap-3">
+                  <span className="bg-primary text-primary-foreground rounded-full w-6 h-6 flex items-center justify-center text-sm font-bold flex-shrink-0">3</span>
+                  <div>
+                    <span className="font-medium">Confirm</span>
+                    <p className="text-sm text-muted-foreground">Tap "Add" in the top right corner</p>
+                  </div>
                 </li>
               </ol>
-            </div>
-          ) : isAndroid ? (
-            <div className="bg-muted rounded-lg p-4 space-y-3">
-              <p className="font-medium text-sm">Install on Android:</p>
-              <ol className="text-sm space-y-2 text-muted-foreground">
-                <li className="flex items-start gap-2">
-                  <span className="bg-primary text-primary-foreground rounded-full w-5 h-5 flex items-center justify-center text-xs flex-shrink-0">1</span>
-                  <span>Tap the <MoreVertical className="w-4 h-4 inline mx-1" /> menu button in Chrome</span>
-                </li>
-                <li className="flex items-start gap-2">
-                  <span className="bg-primary text-primary-foreground rounded-full w-5 h-5 flex items-center justify-center text-xs flex-shrink-0">2</span>
-                  <span>Tap "Install app" or "Add to Home screen"</span>
-                </li>
-                <li className="flex items-start gap-2">
-                  <span className="bg-primary text-primary-foreground rounded-full w-5 h-5 flex items-center justify-center text-xs flex-shrink-0">3</span>
-                  <span>Tap "Install" to confirm</span>
-                </li>
-              </ol>
-            </div>
-          ) : (
-            <div className="bg-muted rounded-lg p-4 text-center">
-              <p className="text-sm text-muted-foreground">
-                Open this page on your mobile device to install the app
-              </p>
             </div>
           )}
 
-          <Button variant="outline" onClick={() => navigate("/")} className="w-full">
-            Continue in Browser
-          </Button>
+          {/* Android Instructions - show if no deferred prompt or explicitly requested */}
+          {isAndroid && (showManualInstructions || !deferredPrompt) && (
+            <div className="bg-gradient-to-br from-muted to-muted/50 rounded-xl p-5 space-y-4 border">
+              <div className="flex items-center gap-2">
+                <div className="w-8 h-8 bg-primary/10 rounded-lg flex items-center justify-center">
+                  <MoreVertical className="w-4 h-4 text-primary" />
+                </div>
+                <p className="font-semibold">Install on Android</p>
+              </div>
+              <ol className="space-y-3">
+                <li className="flex items-start gap-3">
+                  <span className="bg-primary text-primary-foreground rounded-full w-6 h-6 flex items-center justify-center text-sm font-bold flex-shrink-0">1</span>
+                  <div>
+                    <span className="font-medium">Open Menu</span>
+                    <p className="text-sm text-muted-foreground">Tap <MoreVertical className="w-4 h-4 inline mx-1 text-primary" /> (3 dots) in Chrome's top right</p>
+                  </div>
+                </li>
+                <li className="flex items-start gap-3">
+                  <span className="bg-primary text-primary-foreground rounded-full w-6 h-6 flex items-center justify-center text-sm font-bold flex-shrink-0">2</span>
+                  <div>
+                    <span className="font-medium">Install App</span>
+                    <p className="text-sm text-muted-foreground">Tap "Install app" or "Add to Home screen"</p>
+                  </div>
+                </li>
+                <li className="flex items-start gap-3">
+                  <span className="bg-primary text-primary-foreground rounded-full w-6 h-6 flex items-center justify-center text-sm font-bold flex-shrink-0">3</span>
+                  <div>
+                    <span className="font-medium">Confirm</span>
+                    <p className="text-sm text-muted-foreground">Tap "Install" to add to your home screen</p>
+                  </div>
+                </li>
+              </ol>
+            </div>
+          )}
+
+          {/* Desktop/Unknown device fallback */}
+          {!isIOS && !isAndroid && !deferredPrompt && (
+            <div className="bg-muted/50 rounded-xl p-5 text-center space-y-3 border">
+              <Smartphone className="w-10 h-10 mx-auto text-muted-foreground" />
+              <p className="text-sm text-muted-foreground">
+                Open this page on your <strong>mobile phone</strong> to install the app
+              </p>
+              <Button 
+                variant="outline" 
+                size="sm" 
+                onClick={handleRefresh}
+                className="mt-2"
+              >
+                <RefreshCw className="w-4 h-4 mr-2" />
+                Refresh Page
+              </Button>
+            </div>
+          )}
+
+          <div className="pt-2 space-y-3">
+            <Button variant="outline" onClick={() => navigate("/")} className="w-full">
+              Continue in Browser
+            </Button>
+            
+            {(isAndroid || isIOS) && !deferredPrompt && (
+              <p className="text-xs text-center text-muted-foreground">
+                Having trouble? Make sure you're using {isIOS ? "Safari" : "Chrome"} browser.
+              </p>
+            )}
+          </div>
         </CardContent>
       </Card>
     </div>
