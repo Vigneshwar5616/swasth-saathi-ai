@@ -246,6 +246,10 @@ export type Database = {
         }
         Returns: string
       }
+      purge_old_chat_conversations: {
+        Args: { retention_days?: number }
+        Returns: number
+      }
     }
     Enums: {
       app_role: "admin" | "user"
