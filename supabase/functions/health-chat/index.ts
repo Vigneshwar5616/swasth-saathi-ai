@@ -9,6 +9,17 @@ const ALLOWED_ORIGINS = [
   'http://localhost:5173',
 ];
 
+// Valid languages allowlist
+const VALID_LANGUAGES = [
+  'en-IN', 'hi-IN', 'te-IN', 'ta-IN', 'kn-IN', 
+  'ml-IN', 'mr-IN', 'bn-IN', 'gu-IN', 'English'
+];
+
+// Input validation limits
+const MAX_MESSAGES = 20;
+const MAX_MESSAGE_LENGTH = 2000;
+const MAX_TOTAL_CONTENT_LENGTH = 10000;
+
 // Rate limiting configuration
 const RATE_LIMIT_WINDOW_MS = 60 * 1000; // 1 minute
 const ANONYMOUS_RATE_LIMIT = 5; // 5 requests per minute for anonymous users
@@ -38,7 +49,6 @@ function checkRateLimit(key: string, limit: number): { allowed: boolean; remaini
   const record = rateLimitStore.get(key);
   
   if (!record || now > record.resetAt) {
-    // Reset or create new record
     const resetAt = now + RATE_LIMIT_WINDOW_MS;
     rateLimitStore.set(key, { count: 1, resetAt });
     return { allowed: true, remaining: limit - 1, resetAt };
@@ -54,20 +64,123 @@ function checkRateLimit(key: string, limit: number): { allowed: boolean; remaini
 }
 
 function getClientIP(req: Request): string {
-  // Try various headers for client IP
   const forwarded = req.headers.get('x-forwarded-for');
-  if (forwarded) {
-    return forwarded.split(',')[0].trim();
-  }
+  if (forwarded) return forwarded.split(',')[0].trim();
   const realIP = req.headers.get('x-real-ip');
-  if (realIP) {
-    return realIP;
-  }
+  if (realIP) return realIP;
   const cfIP = req.headers.get('cf-connecting-ip');
-  if (cfIP) {
-    return cfIP;
-  }
+  if (cfIP) return cfIP;
   return 'unknown';
+}
+
+// Input sanitization - remove potentially dangerous patterns
+function sanitizeContent(content: string): string {
+  return content
+    .replace(/<script[^>]*>[\s\S]*?<\/script>/gi, '') // Remove script tags
+    .replace(/<[^>]+>/g, '') // Remove HTML tags
+    .replace(/javascript:/gi, '') // Remove javascript: protocol
+    .replace(/on\w+\s*=/gi, '') // Remove event handlers
+    .trim();
+}
+
+// Validate message structure
+function validateMessage(msg: unknown): { valid: boolean; role?: string; content?: string; error?: string } {
+  if (!msg || typeof msg !== 'object') {
+    return { valid: false, error: 'Invalid message format' };
+  }
+  
+  const m = msg as Record<string, unknown>;
+  
+  if (typeof m.role !== 'string' || !['user', 'assistant', 'system'].includes(m.role)) {
+    return { valid: false, error: 'Invalid message role' };
+  }
+  
+  if (typeof m.content !== 'string') {
+    return { valid: false, error: 'Message content must be a string' };
+  }
+  
+  if (m.content.length > MAX_MESSAGE_LENGTH) {
+    return { valid: false, error: `Message content exceeds ${MAX_MESSAGE_LENGTH} characters` };
+  }
+  
+  const sanitizedContent = sanitizeContent(m.content);
+  
+  return { valid: true, role: m.role, content: sanitizedContent };
+}
+
+// Validate entire request body
+function validateRequestBody(body: unknown): { 
+  valid: boolean; 
+  messages?: Array<{ role: string; content: string }>; 
+  language?: string;
+  stream?: boolean;
+  error?: string 
+} {
+  if (!body || typeof body !== 'object') {
+    return { valid: false, error: 'Invalid request body' };
+  }
+  
+  const b = body as Record<string, unknown>;
+  
+  // Validate messages array
+  if (!Array.isArray(b.messages)) {
+    return { valid: false, error: 'messages must be an array' };
+  }
+  
+  if (b.messages.length === 0) {
+    return { valid: false, error: 'messages array cannot be empty' };
+  }
+  
+  if (b.messages.length > MAX_MESSAGES) {
+    return { valid: false, error: `Maximum ${MAX_MESSAGES} messages allowed` };
+  }
+  
+  // Validate each message
+  const validatedMessages: Array<{ role: string; content: string }> = [];
+  let totalContentLength = 0;
+  
+  for (const msg of b.messages) {
+    const result = validateMessage(msg);
+    if (!result.valid) {
+      return { valid: false, error: result.error };
+    }
+    
+    totalContentLength += result.content!.length;
+    if (totalContentLength > MAX_TOTAL_CONTENT_LENGTH) {
+      return { valid: false, error: `Total content length exceeds ${MAX_TOTAL_CONTENT_LENGTH} characters` };
+    }
+    
+    if (result.content!.trim().length > 0) {
+      validatedMessages.push({ role: result.role!, content: result.content! });
+    }
+  }
+  
+  // Validate language
+  let language = 'English';
+  if (b.language !== undefined) {
+    if (typeof b.language !== 'string') {
+      return { valid: false, error: 'language must be a string' };
+    }
+    // Check against allowlist
+    if (!VALID_LANGUAGES.includes(b.language)) {
+      // Default to English if invalid language provided
+      language = 'English';
+      console.log(`Invalid language "${b.language}", defaulting to English`);
+    } else {
+      language = b.language;
+    }
+  }
+  
+  // Validate stream
+  let stream = false;
+  if (b.stream !== undefined) {
+    if (typeof b.stream !== 'boolean') {
+      return { valid: false, error: 'stream must be a boolean' };
+    }
+    stream = b.stream;
+  }
+  
+  return { valid: true, messages: validatedMessages, language, stream };
 }
 
 interface ChatMessage {
@@ -79,7 +192,6 @@ Deno.serve(async (req) => {
   const origin = req.headers.get('origin');
   const corsHeaders = getCorsHeaders(origin);
   
-  // Handle CORS preflight requests
   if (req.method === 'OPTIONS') {
     return new Response(null, { headers: corsHeaders });
   }
@@ -142,10 +254,29 @@ Deno.serve(async (req) => {
     
     console.log(`Request from ${userId ? `user:${userId}` : `IP:${clientIP}`}, remaining: ${rateLimitResult.remaining}`);
 
-    const { messages, language, stream = false } = await req.json();
+    // Parse and validate request body
+    let rawBody: unknown;
+    try {
+      rawBody = await req.json();
+    } catch {
+      return new Response(JSON.stringify({ error: "Invalid JSON body" }), {
+        status: 400,
+        headers: { ...corsHeaders, "Content-Type": "application/json" },
+      });
+    }
+    
+    const validation = validateRequestBody(rawBody);
+    if (!validation.valid) {
+      return new Response(JSON.stringify({ error: validation.error }), {
+        status: 400,
+        headers: { ...corsHeaders, "Content-Type": "application/json" },
+      });
+    }
+    
+    const { messages, language, stream } = validation;
 
-    if (!Array.isArray(messages) || messages.length === 0) {
-      return new Response(JSON.stringify({ error: "Missing messages" }), {
+    if (!messages || messages.length === 0) {
+      return new Response(JSON.stringify({ error: "No valid messages provided" }), {
         status: 400,
         headers: { ...corsHeaders, "Content-Type": "application/json" },
       });
@@ -189,16 +320,12 @@ RESPONSE FORMAT:
 - Provide the main information with practical tips
 - End with encouragement and care: "Take care of yourself!", "Wishing you good health!"`;
 
-    // Ensure messages alternate properly (user, assistant, user, assistant...)
-    // Perplexity requires this pattern after the system message
-    
-    // Filter out empty messages and only keep user/assistant
-    const validMessages = messages
-      .filter((m: { role: string; content: string }) => 
-        (m.role === "user" || m.role === "assistant") && 
-        m.content && 
-        m.content.trim().length > 0
-      );
+    // Filter only user/assistant messages
+    const validMessages = messages.filter(m => 
+      (m.role === "user" || m.role === "assistant") && 
+      m.content && 
+      m.content.trim().length > 0
+    );
     
     // Build alternating message array ensuring user starts first
     const alternatingMessages: ChatMessage[] = [];
@@ -213,7 +340,6 @@ RESPONSE FORMAT:
           content: msg.content
         });
       } else if (msg.role === "user" && alternatingMessages.length === 0) {
-        // First message must be user
         alternatingMessages.push({
           role: "user",
           content: msg.content
@@ -223,7 +349,7 @@ RESPONSE FORMAT:
     
     // If we have no messages or don't start with user, just use the last user message
     if (alternatingMessages.length === 0 || alternatingMessages[0].role !== "user") {
-      const lastUserMsg = validMessages.filter((m: { role: string }) => m.role === "user").pop();
+      const lastUserMsg = validMessages.filter(m => m.role === "user").pop();
       if (lastUserMsg) {
         alternatingMessages.length = 0;
         alternatingMessages.push({
@@ -231,7 +357,6 @@ RESPONSE FORMAT:
           content: lastUserMsg.content
         });
       } else {
-        // No valid user message found
         return new Response(JSON.stringify({ error: "No valid user message found" }), {
           status: 400,
           headers: { ...corsHeaders, "Content-Type": "application/json" },
@@ -239,19 +364,16 @@ RESPONSE FORMAT:
       }
     }
     
-    // Ensure we don't end with assistant (API expects user message last for new response)
-    // But actually Perplexity expects the last message to be user for getting a response
-    // So if last message is assistant, we should just use the last user message
+    // Ensure we don't end with assistant
     if (alternatingMessages[alternatingMessages.length - 1]?.role === "assistant") {
-      // Keep only messages up to and including the last user message
       while (alternatingMessages.length > 0 && alternatingMessages[alternatingMessages.length - 1].role === "assistant") {
         alternatingMessages.pop();
       }
     }
     
-    // Final safety check - must have at least one user message
+    // Final safety check
     if (alternatingMessages.length === 0) {
-      const lastUserMsg = validMessages.filter((m: { role: string }) => m.role === "user").pop();
+      const lastUserMsg = validMessages.filter(m => m.role === "user").pop();
       if (lastUserMsg) {
         alternatingMessages.push({
           role: "user" as const,
@@ -293,7 +415,6 @@ RESPONSE FORMAT:
       );
     }
 
-    // If streaming, pass through the stream directly
     if (stream) {
       return new Response(response.body, {
         headers: { ...corsHeaders, "Content-Type": "text/event-stream" },
