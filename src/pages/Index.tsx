@@ -426,7 +426,7 @@ Please explain compassionately and remove any stigma around mental health.`
   };
 
   return (
-    <div className="flex h-screen w-full">
+    <div className="flex min-h-screen max-h-screen w-full overflow-hidden">
       <script
         type="application/ld+json"
         suppressHydrationWarning
@@ -460,7 +460,7 @@ Please explain compassionately and remove any stigma around mental health.`
 
       <AppSidebar />
       
-      <div className="flex-1 flex flex-col min-w-0 h-screen overflow-hidden">
+      <div className="flex-1 flex flex-col min-w-0 min-h-0 overflow-hidden">
         <header className="shrink-0 sticky top-0 z-10 border-b border-border bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/60">
           <div className="flex h-14 items-center gap-4 px-4 md:px-6">
             <SidebarTrigger />
@@ -472,8 +472,8 @@ Please explain compassionately and remove any stigma around mental health.`
           </div>
         </header>
         
-        <main className="flex-1 overflow-y-auto overscroll-contain scroll-smooth">
-          <div className="container mx-auto p-4 md:p-6 pb-8">
+        <main className="flex-1 min-h-0 overflow-y-auto overscroll-none">
+          <div className="container mx-auto p-4 md:p-6 pb-24">
             <div className="space-y-6 md:space-y-8">
               <section className="space-y-6">
                 <QuickActions onActionClick={handleQuickAction} />
