@@ -417,7 +417,7 @@ const Settings = () => {
 
   if (authLoading || loading) {
     return (
-      <div className="flex h-screen w-full">
+      <div className="flex min-h-screen max-h-screen w-full overflow-hidden">
         <AppSidebar />
         <div className="flex-1 flex items-center justify-center">
           <Loader2 className="h-8 w-8 animate-spin text-primary" />
@@ -427,10 +427,10 @@ const Settings = () => {
   }
 
   return (
-    <div className="flex h-screen w-full">
+    <div className="flex min-h-screen max-h-screen w-full overflow-hidden">
       <AppSidebar />
       
-      <div className="flex-1 flex flex-col overflow-auto">
+      <div className="flex-1 flex flex-col min-h-0 overflow-hidden">
         <div className="border-b bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/60">
           <div className="container mx-auto px-6 py-4 flex items-center justify-between">
             <div>
@@ -444,7 +444,7 @@ const Settings = () => {
           </div>
         </div>
         
-        <main className="flex-1 container mx-auto p-6">
+        <main className="flex-1 min-h-0 overflow-y-auto overscroll-none container mx-auto p-6 pb-24">
           <Tabs defaultValue="account" className="space-y-6">
             <TabsList className="grid w-full grid-cols-2 lg:grid-cols-6 h-auto gap-2">
               <TabsTrigger value="account" className="flex items-center gap-2">
