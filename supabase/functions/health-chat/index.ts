@@ -1,9 +1,74 @@
 import "jsr:@supabase/functions-js/edge-runtime.d.ts";
+import { createClient } from "https://esm.sh/@supabase/supabase-js@2.49.1";
 
-const corsHeaders = {
-  'Access-Control-Allow-Origin': '*',
-  'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
-};
+// Allowed origins for CORS - restrict to known domains
+const ALLOWED_ORIGINS = [
+  'https://7cd608d8-2528-4588-8caa-f9efbea178de.lovableproject.com',
+  'https://id-preview--7cd608d8-2528-4588-8caa-f9efbea178de.lovable.app',
+  'http://localhost:8080',
+  'http://localhost:5173',
+];
+
+// Rate limiting configuration
+const RATE_LIMIT_WINDOW_MS = 60 * 1000; // 1 minute
+const ANONYMOUS_RATE_LIMIT = 5; // 5 requests per minute for anonymous users
+const AUTHENTICATED_RATE_LIMIT = 30; // 30 requests per minute for authenticated users
+
+// In-memory rate limit store (resets on function cold start)
+const rateLimitStore = new Map<string, { count: number; resetAt: number }>();
+
+function getCorsHeaders(origin: string | null) {
+  const allowedOrigin = origin && ALLOWED_ORIGINS.some(allowed => 
+    origin === allowed || origin.endsWith('.lovable.app') || origin.endsWith('.lovableproject.com')
+  ) ? origin : ALLOWED_ORIGINS[0];
+  
+  return {
+    'Access-Control-Allow-Origin': allowedOrigin,
+    'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
+    'Access-Control-Allow-Methods': 'POST, OPTIONS',
+  };
+}
+
+function getRateLimitKey(ip: string, userId?: string): string {
+  return userId ? `user:${userId}` : `ip:${ip}`;
+}
+
+function checkRateLimit(key: string, limit: number): { allowed: boolean; remaining: number; resetAt: number } {
+  const now = Date.now();
+  const record = rateLimitStore.get(key);
+  
+  if (!record || now > record.resetAt) {
+    // Reset or create new record
+    const resetAt = now + RATE_LIMIT_WINDOW_MS;
+    rateLimitStore.set(key, { count: 1, resetAt });
+    return { allowed: true, remaining: limit - 1, resetAt };
+  }
+  
+  if (record.count >= limit) {
+    return { allowed: false, remaining: 0, resetAt: record.resetAt };
+  }
+  
+  record.count++;
+  rateLimitStore.set(key, record);
+  return { allowed: true, remaining: limit - record.count, resetAt: record.resetAt };
+}
+
+function getClientIP(req: Request): string {
+  // Try various headers for client IP
+  const forwarded = req.headers.get('x-forwarded-for');
+  if (forwarded) {
+    return forwarded.split(',')[0].trim();
+  }
+  const realIP = req.headers.get('x-real-ip');
+  if (realIP) {
+    return realIP;
+  }
+  const cfIP = req.headers.get('cf-connecting-ip');
+  if (cfIP) {
+    return cfIP;
+  }
+  return 'unknown';
+}
 
 interface ChatMessage {
   role: "system" | "user" | "assistant";
@@ -11,6 +76,9 @@ interface ChatMessage {
 }
 
 Deno.serve(async (req) => {
+  const origin = req.headers.get('origin');
+  const corsHeaders = getCorsHeaders(origin);
+  
   // Handle CORS preflight requests
   if (req.method === 'OPTIONS') {
     return new Response(null, { headers: corsHeaders });
@@ -21,8 +89,60 @@ Deno.serve(async (req) => {
   }
 
   try {
+    // Get client IP for rate limiting
+    const clientIP = getClientIP(req);
+    let userId: string | undefined;
+    let rateLimit = ANONYMOUS_RATE_LIMIT;
+    
+    // Check for authentication
+    const authHeader = req.headers.get('authorization');
+    if (authHeader?.startsWith('Bearer ')) {
+      try {
+        const supabaseUrl = Deno.env.get('SUPABASE_URL')!;
+        const supabaseAnonKey = Deno.env.get('SUPABASE_ANON_KEY')!;
+        
+        const supabase = createClient(supabaseUrl, supabaseAnonKey, {
+          global: { headers: { Authorization: authHeader } }
+        });
+        
+        const token = authHeader.replace('Bearer ', '');
+        const { data, error } = await supabase.auth.getClaims(token);
+        
+        if (!error && data?.claims?.sub) {
+          userId = data.claims.sub;
+          rateLimit = AUTHENTICATED_RATE_LIMIT;
+          console.log("Authenticated user:", userId);
+        }
+      } catch (authError) {
+        console.log("Auth check failed, continuing as anonymous:", authError);
+      }
+    }
+    
+    // Apply rate limiting
+    const rateLimitKey = getRateLimitKey(clientIP, userId);
+    const rateLimitResult = checkRateLimit(rateLimitKey, rateLimit);
+    
+    if (!rateLimitResult.allowed) {
+      console.log(`Rate limit exceeded for ${rateLimitKey}`);
+      return new Response(
+        JSON.stringify({ 
+          error: "Rate limit exceeded", 
+          retryAfter: Math.ceil((rateLimitResult.resetAt - Date.now()) / 1000) 
+        }),
+        { 
+          status: 429, 
+          headers: { 
+            ...corsHeaders, 
+            "Content-Type": "application/json",
+            "Retry-After": String(Math.ceil((rateLimitResult.resetAt - Date.now()) / 1000))
+          } 
+        }
+      );
+    }
+    
+    console.log(`Request from ${userId ? `user:${userId}` : `IP:${clientIP}`}, remaining: ${rateLimitResult.remaining}`);
+
     const { messages, language, stream = false } = await req.json();
-    console.log("Received request with language:", language, "stream:", stream);
 
     if (!Array.isArray(messages) || messages.length === 0) {
       return new Response(JSON.stringify({ error: "Missing messages" }), {
