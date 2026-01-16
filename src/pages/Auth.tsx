@@ -80,7 +80,7 @@ const Auth = () => {
     if (!validateForm()) return;
     
     setLoading(true);
-    const { error } = await signUp(email, password, fullName);
+    const { error, session } = await signUp(email, password, fullName);
     setLoading(false);
     
     if (error) {
@@ -89,7 +89,15 @@ const Auth = () => {
         message = "This email is already registered. Please sign in instead.";
       }
       toast({ title: "Sign up failed", description: message, variant: "destructive" });
+    } else if (session) {
+      // Auto-signed in (email confirmation disabled)
+      toast({ 
+        title: "Welcome!", 
+        description: "Your account has been created and you're now signed in." 
+      });
+      navigate("/");
     } else {
+      // Email confirmation required
       toast({ 
         title: "Account created!", 
         description: "Please check your email to confirm your account, then sign in." 
