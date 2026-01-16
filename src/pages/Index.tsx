@@ -226,6 +226,16 @@ const Index = () => {
     }
   };
 
+  // Helper to get auth headers
+  const getAuthHeaders = async (): Promise<Record<string, string>> => {
+    const headers: Record<string, string> = { "Content-Type": "application/json" };
+    const { data: { session } } = await supabase.auth.getSession();
+    if (session?.access_token) {
+      headers["Authorization"] = `Bearer ${session.access_token}`;
+    }
+    return headers;
+  };
+
   const send = async () => {
     const text = input.trim();
     if (!text) return;
@@ -240,11 +250,10 @@ const Index = () => {
     let assistantContent = "";
     
     try {
+      const headers = await getAuthHeaders();
       const resp = await fetch("https://tknpmvtfccepvwegcnfz.supabase.co/functions/v1/health-chat", {
         method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-        },
+        headers,
         body: JSON.stringify({
           messages: next.filter(m => m.content && m.content.trim().length > 0).slice(-4),
           language: language,
@@ -298,9 +307,10 @@ const Index = () => {
       
       // If no streaming content, try non-streaming fallback
       if (!assistantContent || assistantContent === "...") {
+        const fallbackHeaders = await getAuthHeaders();
         const fallbackResp = await fetch("https://tknpmvtfccepvwegcnfz.supabase.co/functions/v1/health-chat", {
           method: "POST",
-          headers: { "Content-Type": "application/json" },
+          headers: fallbackHeaders,
           body: JSON.stringify({ 
             messages: next.filter(m => m.content && m.content.trim().length > 0).slice(-4), 
             language 
@@ -381,15 +391,17 @@ Please explain compassionately and remove any stigma around mental health.`
       
       let assistantContent = "";
       
-      fetch("https://tknpmvtfccepvwegcnfz.supabase.co/functions/v1/health-chat", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          messages: [{ role: "user", content: prompt }],
-          language: language,
-          stream: false,
-        }),
-      })
+      getAuthHeaders().then(headers => 
+        fetch("https://tknpmvtfccepvwegcnfz.supabase.co/functions/v1/health-chat", {
+          method: "POST",
+          headers,
+          body: JSON.stringify({
+            messages: [{ role: "user", content: prompt }],
+            language: language,
+            stream: false,
+          }),
+        })
+      )
         .then(async resp => {
           if (!resp.ok) throw new Error("Request failed");
           const data = await resp.json();
