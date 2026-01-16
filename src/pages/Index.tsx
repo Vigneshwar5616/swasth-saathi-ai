@@ -3,7 +3,7 @@ import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
 import { useToast } from "@/hooks/use-toast";
-import { Mic, Send, Loader2 } from "lucide-react";
+import { Mic, Send, Loader2, ArrowDown } from "lucide-react";
 import { ChatMessage } from "@/components/chat/ChatMessage";
 import { AppSidebar } from "@/components/layout/AppSidebar";
 import { SidebarTrigger } from "@/components/ui/sidebar";
@@ -25,10 +25,13 @@ const Index = () => {
   const [loading, setLoading] = useState(false);
   const [voice, setVoice] = useState(true);
   const [isListening, setIsListening] = useState(false);
+  const [showScrollButton, setShowScrollButton] = useState(false);
   
   const [searchQuery, setSearchQuery] = useState("");
   
   const recognitionRef = useRef<SpeechRecognition | null>(null);
+  const chatContainerRef = useRef<HTMLDivElement>(null);
+  const messagesEndRef = useRef<HTMLDivElement>(null);
   const { toast } = useToast();
 
   // Setup Web Speech voices with Indian preferences
@@ -100,6 +103,30 @@ const Index = () => {
       loadUserSettings();
     }
   }, [user]);
+
+  // Scroll to bottom when new messages arrive
+  const scrollToBottom = (smooth = true) => {
+    if (messagesEndRef.current) {
+      messagesEndRef.current.scrollIntoView({ 
+        behavior: smooth ? "smooth" : "auto",
+        block: "end"
+      });
+    }
+  };
+
+  // Auto-scroll on new messages
+  useEffect(() => {
+    scrollToBottom();
+  }, [messages]);
+
+  // Handle scroll to detect if user scrolled up
+  const handleChatScroll = () => {
+    if (chatContainerRef.current) {
+      const { scrollTop, scrollHeight, clientHeight } = chatContainerRef.current;
+      const isNearBottom = scrollHeight - scrollTop - clientHeight < 100;
+      setShowScrollButton(!isNearBottom && messages.length > 0);
+    }
+  };
 
   const loadUserSettings = async () => {
     if (!user) return;
@@ -492,28 +519,48 @@ Please explain compassionately and remove any stigma around mental health.`
                   </div>
                 </div>
 
-                <Card className="min-h-[200px] max-h-[400px] overflow-y-auto bg-card overscroll-contain">
-                  <CardContent className="p-4 space-y-4">
-                    {messages.length === 0 && (
-                      <div className="flex items-center gap-3 p-4 bg-primary/5 rounded-lg">
-                        <div className="w-8 h-8 rounded-full bg-primary flex items-center justify-center shrink-0">
-                          <span className="text-xs font-medium text-primary-foreground">AI</span>
+                <div className="relative">
+                  <Card 
+                    ref={chatContainerRef}
+                    onScroll={handleChatScroll}
+                    className="min-h-[200px] max-h-[400px] overflow-y-auto bg-card overscroll-none scroll-smooth"
+                  >
+                    <CardContent className="p-4 space-y-4">
+                      {messages.length === 0 && (
+                        <div className="flex items-center gap-3 p-4 bg-primary/5 rounded-lg">
+                          <div className="w-8 h-8 rounded-full bg-primary flex items-center justify-center shrink-0">
+                            <span className="text-xs font-medium text-primary-foreground">AI</span>
+                          </div>
+                          <div className="text-sm text-foreground">
+                            Hello! I'm your AI Health Assistant. I'm here to help you with health information, symptom guidance, and general wellness questions. {!user && "Sign in to save your chat history."} How can I assist you today?
+                          </div>
                         </div>
-                        <div className="text-sm text-foreground">
-                          Hello! I'm your AI Health Assistant. I'm here to help you with health information, symptom guidance, and general wellness questions. {!user && "Sign in to save your chat history."} How can I assist you today?
+                      )}
+                      {messages.map((msg, i) => (
+                        <ChatMessage key={i} role={msg.role} content={msg.content} />
+                      ))}
+                      {loading && (
+                        <div className="flex justify-center py-4">
+                          <Loader2 className="h-6 w-6 animate-spin text-primary" />
                         </div>
-                      </div>
-                    )}
-                    {messages.map((msg, i) => (
-                      <ChatMessage key={i} role={msg.role} content={msg.content} />
-                    ))}
-                    {loading && (
-                      <div className="flex justify-center py-4">
-                        <Loader2 className="h-6 w-6 animate-spin text-primary" />
-                      </div>
-                    )}
-                  </CardContent>
-                </Card>
+                      )}
+                      <div ref={messagesEndRef} />
+                    </CardContent>
+                  </Card>
+                  
+                  {/* Scroll to bottom button */}
+                  {showScrollButton && (
+                    <Button
+                      size="icon"
+                      variant="secondary"
+                      className="absolute bottom-4 right-4 h-10 w-10 rounded-full shadow-lg border bg-background/95 backdrop-blur hover:bg-primary hover:text-primary-foreground transition-all duration-200 animate-fade-in"
+                      onClick={() => scrollToBottom()}
+                      aria-label="Scroll to bottom"
+                    >
+                      <ArrowDown className="h-5 w-5" />
+                    </Button>
+                  )}
+                </div>
 
                 <div className="space-y-4">
                   <div className="flex flex-wrap gap-4">
