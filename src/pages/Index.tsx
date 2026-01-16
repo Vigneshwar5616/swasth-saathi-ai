@@ -263,6 +263,69 @@ const Index = () => {
     return headers;
   };
 
+  // Retry helper with exponential backoff
+  const fetchWithRetry = async (
+    url: string, 
+    options: RequestInit, 
+    maxRetries = 3, 
+    baseDelay = 1000
+  ): Promise<Response> => {
+    let lastError: Error | null = null;
+    
+    for (let attempt = 0; attempt < maxRetries; attempt++) {
+      try {
+        const controller = new AbortController();
+        const timeoutId = setTimeout(() => controller.abort(), 30000); // 30s timeout
+        
+        const response = await fetch(url, {
+          ...options,
+          signal: controller.signal,
+        });
+        
+        clearTimeout(timeoutId);
+        
+        // Don't retry on client errors (4xx) except 429 (rate limit)
+        if (response.status >= 400 && response.status < 500 && response.status !== 429) {
+          return response;
+        }
+        
+        // For rate limiting, wait and retry
+        if (response.status === 429) {
+          const retryAfter = parseInt(response.headers.get('Retry-After') || '5', 10);
+          await new Promise(resolve => setTimeout(resolve, retryAfter * 1000));
+          continue;
+        }
+        
+        if (response.ok) {
+          return response;
+        }
+        
+        // For 5xx errors, retry with backoff
+        if (response.status >= 500) {
+          lastError = new Error(`Server error: ${response.status}`);
+          await new Promise(resolve => setTimeout(resolve, baseDelay * Math.pow(2, attempt)));
+          continue;
+        }
+        
+        return response;
+      } catch (error: any) {
+        lastError = error;
+        
+        // Don't retry on abort
+        if (error.name === 'AbortError') {
+          throw new Error('Request timed out. Please try again.');
+        }
+        
+        // Network error - retry with backoff
+        if (attempt < maxRetries - 1) {
+          await new Promise(resolve => setTimeout(resolve, baseDelay * Math.pow(2, attempt)));
+        }
+      }
+    }
+    
+    throw lastError || new Error('Request failed after retries');
+  };
+
   const send = async () => {
     const text = input.trim();
     if (!text) return;
@@ -278,20 +341,25 @@ const Index = () => {
     
     try {
       const headers = await getAuthHeaders();
-      const resp = await fetch("https://tknpmvtfccepvwegcnfz.supabase.co/functions/v1/health-chat", {
-        method: "POST",
-        headers,
-        body: JSON.stringify({
-          messages: next.filter(m => m.content && m.content.trim().length > 0).slice(-4),
-          language: language,
-          stream: true,
-        }),
-      });
+      
+      // Try streaming first
+      const resp = await fetchWithRetry(
+        `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/health-chat`,
+        {
+          method: "POST",
+          headers,
+          body: JSON.stringify({
+            messages: next.filter(m => m.content && m.content.trim().length > 0).slice(-4),
+            language: language,
+            stream: true,
+          }),
+        }
+      );
 
       if (!resp.ok) {
-        const errorText = await resp.text();
-        console.error("API Error:", errorText);
-        throw new Error("Failed to get response. Please try again.");
+        const errorData = await resp.json().catch(() => ({}));
+        const errorMessage = errorData.error || `Server error (${resp.status})`;
+        throw new Error(errorMessage);
       }
       
       const reader = resp.body?.getReader();
@@ -335,17 +403,22 @@ const Index = () => {
       // If no streaming content, try non-streaming fallback
       if (!assistantContent || assistantContent === "...") {
         const fallbackHeaders = await getAuthHeaders();
-        const fallbackResp = await fetch("https://tknpmvtfccepvwegcnfz.supabase.co/functions/v1/health-chat", {
-          method: "POST",
-          headers: fallbackHeaders,
-          body: JSON.stringify({ 
-            messages: next.filter(m => m.content && m.content.trim().length > 0).slice(-4), 
-            language 
-          }),
-        });
+        const fallbackResp = await fetchWithRetry(
+          `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/health-chat`,
+          {
+            method: "POST",
+            headers: fallbackHeaders,
+            body: JSON.stringify({ 
+              messages: next.filter(m => m.content && m.content.trim().length > 0).slice(-4), 
+              language,
+              stream: false,
+            }),
+          }
+        );
         
         if (!fallbackResp.ok) {
-          throw new Error("Failed to get response");
+          const errorData = await fallbackResp.json().catch(() => ({}));
+          throw new Error(errorData.error || "Failed to get response");
         }
         
         const data = await fallbackResp.json();
@@ -379,15 +452,26 @@ const Index = () => {
         }
       }
     } catch (e: any) {
+      console.error('Chat error:', e);
       // Remove the placeholder message on error
       setMessages(curr => curr.filter(m => m.content !== "..." && m.content.trim().length > 0));
-      toast({ title: "Request failed", description: e?.message || "Please try again." });
+      
+      let description = "Please try again.";
+      if (e?.message?.includes('timeout')) {
+        description = "Request timed out. Please try again.";
+      } else if (e?.message?.includes('Rate limit')) {
+        description = "Too many requests. Please wait a moment.";
+      } else if (e?.message) {
+        description = e.message;
+      }
+      
+      toast({ title: "Request failed", description, variant: "destructive" });
     } finally {
       setLoading(false);
     }
   };
 
-  const handleQuickAction = (action: string) => {
+  const handleQuickAction = async (action: string) => {
     const actionPrompts: Record<string, string> = {
       "Heart Health": `Please provide comprehensive information about heart health and cardiovascular wellness. Include:
 - Key factors that affect heart health (diet, exercise, stress, sleep)
@@ -409,17 +493,19 @@ Please explain compassionately and remove any stigma around mental health.`
     };
     
     const prompt = actionPrompts[action];
-    if (prompt) {
-      // Directly trigger send with the prompt
-      const cleanMessages = messages.filter(m => m.content && m.content.trim().length > 0);
-      const next = [...cleanMessages, { role: "user", content: prompt } as Message];
-      setMessages(next);
-      setLoading(true);
-      
-      let assistantContent = "";
-      
-      getAuthHeaders().then(headers => 
-        fetch("https://tknpmvtfccepvwegcnfz.supabase.co/functions/v1/health-chat", {
+    if (!prompt) return;
+    
+    // Directly trigger send with the prompt
+    const cleanMessages = messages.filter(m => m.content && m.content.trim().length > 0);
+    const next = [...cleanMessages, { role: "user", content: prompt } as Message];
+    setMessages(next);
+    setLoading(true);
+    
+    try {
+      const headers = await getAuthHeaders();
+      const resp = await fetchWithRetry(
+        `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/health-chat`,
+        {
           method: "POST",
           headers,
           body: JSON.stringify({
@@ -427,28 +513,40 @@ Please explain compassionately and remove any stigma around mental health.`
             language: language,
             stream: false,
           }),
-        })
-      )
-        .then(async resp => {
-          if (!resp.ok) throw new Error("Request failed");
-          const data = await resp.json();
-          assistantContent = data?.choices?.[0]?.message?.content || "I'm sorry, I couldn't get information right now.";
-          setMessages(curr => [...curr, { role: "assistant", content: assistantContent }]);
-          speak(assistantContent);
-          
-          if (user && assistantContent) {
-            await supabase.from("user_conversations").insert({
-              user_id: user.id,
-              user_message: prompt,
-              assistant_message: assistantContent,
-              language: language,
-            });
-          }
-        })
-        .catch(e => {
-          toast({ title: "Request failed", description: "Please try again." });
-        })
-        .finally(() => setLoading(false));
+        }
+      );
+      
+      if (!resp.ok) {
+        const errorData = await resp.json().catch(() => ({}));
+        throw new Error(errorData.error || "Request failed");
+      }
+      
+      const data = await resp.json();
+      const assistantContent = data?.choices?.[0]?.message?.content || "I'm sorry, I couldn't get information right now.";
+      setMessages(curr => [...curr, { role: "assistant", content: assistantContent }]);
+      speak(assistantContent);
+      
+      if (user && assistantContent) {
+        await supabase.from("user_conversations").insert({
+          user_id: user.id,
+          user_message: prompt,
+          assistant_message: assistantContent,
+          language: language,
+        });
+      }
+    } catch (e: any) {
+      console.error('Quick action error:', e);
+      let description = "Please try again.";
+      if (e?.message?.includes('timeout')) {
+        description = "Request timed out. Please try again.";
+      } else if (e?.message?.includes('Rate limit')) {
+        description = "Too many requests. Please wait a moment.";
+      } else if (e?.message) {
+        description = e.message;
+      }
+      toast({ title: "Request failed", description, variant: "destructive" });
+    } finally {
+      setLoading(false);
     }
   };
 
