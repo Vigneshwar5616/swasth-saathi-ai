@@ -460,8 +460,8 @@ Please explain compassionately and remove any stigma around mental health.`
 
       <AppSidebar />
       
-      <div className="flex-1 flex flex-col min-w-0">
-        <header className="sticky top-0 z-10 border-b border-border bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/60">
+      <div className="flex-1 flex flex-col min-w-0 h-screen overflow-hidden">
+        <header className="shrink-0 sticky top-0 z-10 border-b border-border bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/60">
           <div className="flex h-14 items-center gap-4 px-4 md:px-6">
             <SidebarTrigger />
             <DashboardHeader 
@@ -472,102 +472,103 @@ Please explain compassionately and remove any stigma around mental health.`
           </div>
         </header>
         
-        <main className="flex-1 overflow-auto">
-          <div className="container mx-auto p-4 md:p-6 space-y-6 md:space-y-8">
-            <section className="space-y-6">
-              <QuickActions onActionClick={handleQuickAction} />
-            </section>
+        <main className="flex-1 overflow-y-auto overscroll-contain scroll-smooth">
+          <div className="container mx-auto p-4 md:p-6 pb-8">
+            <div className="space-y-6 md:space-y-8">
+              <section className="space-y-6">
+                <QuickActions onActionClick={handleQuickAction} />
+              </section>
 
-            <section>
-              <HealthTipsCarousel />
-            </section>
+              <section>
+                <HealthTipsCarousel />
+              </section>
 
-            <section className="space-y-4">
-              <div className="flex items-center justify-between">
-                <h2 className="text-lg font-semibold">HealthAI Assistant</h2>
-                <div className="flex items-center gap-2 text-sm text-muted-foreground">
-                  <span className="inline-block w-2 h-2 bg-green-500 rounded-full"></span>
-                  <span>{new Date().toLocaleTimeString()}</span>
-                  <span className="text-primary font-medium">100% confident</span>
-                </div>
-              </div>
-
-              <Card className="h-48 overflow-y-auto bg-card">
-                <CardContent className="p-4 space-y-4">
-                  {messages.length === 0 && (
-                    <div className="flex items-center gap-3 p-4 bg-primary/5 rounded-lg">
-                      <div className="w-8 h-8 rounded-full bg-primary flex items-center justify-center">
-                        <span className="text-xs font-medium text-primary-foreground">AI</span>
-                      </div>
-                      <div className="text-sm text-foreground">
-                        Hello! I'm your AI Health Assistant. I'm here to help you with health information, symptom guidance, and general wellness questions. {!user && "Sign in to save your chat history."} How can I assist you today?
-                      </div>
-                    </div>
-                  )}
-                  {messages.map((msg, i) => (
-                    <ChatMessage key={i} role={msg.role} content={msg.content} />
-                  ))}
-                  {loading && (
-                    <div className="flex justify-center py-4">
-                      <Loader2 className="h-6 w-6 animate-spin text-primary" />
-                    </div>
-                  )}
-                </CardContent>
-              </Card>
-
-              <div className="space-y-4">
-                <div className="flex gap-4">
-                  <LanguageSelector value={language} onChange={setLanguage} />
-                  <VoiceToggle enabled={voice} onChange={setVoice} />
-                </div>
-
-                <div className="space-y-2">
-                  <div className="flex items-center gap-2">
-                    <Button
-                      variant="outline"
-                      size="sm"
-                      onClick={handleMic}
-                      disabled={loading}
-                      className={`${isListening ? "bg-red-100 border-red-300 text-red-600" : "bg-primary text-primary-foreground hover:bg-primary/90"}`}
-                    >
-                      <Mic className="h-4 w-4 mr-1" />
-                      Voice Input
-                    </Button>
-                  </div>
-                  
-                  <div className="flex gap-2">
-                    <Textarea
-                      value={input}
-                      onChange={(e) => setInput(e.target.value)}
-                      placeholder="Type your health question here..."
-                      className="flex-1 resize-none"
-                      rows={3}
-                      onKeyDown={(e) => {
-                        if (e.key === "Enter" && !e.shiftKey) {
-                          e.preventDefault();
-                          if (!loading) send();
-                        }
-                      }}
-                      disabled={loading}
-                      aria-label="Health question input"
-                    />
-                    <Button
-                      onClick={send}
-                      disabled={loading || !input.trim()}
-                      aria-label="Send message"
-                      className="bg-primary hover:bg-primary/90 h-auto px-6"
-                      data-send-button
-                    >
-                      <Send className="h-4 w-4" />
-                    </Button>
+              <section className="space-y-4">
+                <div className="flex items-center justify-between">
+                  <h2 className="text-lg font-semibold">HealthAI Assistant</h2>
+                  <div className="flex items-center gap-2 text-sm text-muted-foreground">
+                    <span className="inline-block w-2 h-2 bg-green-500 rounded-full animate-pulse"></span>
+                    <span className="text-primary font-medium">Online</span>
                   </div>
                 </div>
 
-                <p className="text-xs text-muted-foreground text-center">
-                  This AI assistant provides general health information only. Always consult healthcare professionals for medical advice. {!user && "Sign in to save your chat history."}
-                </p>
-              </div>
-            </section>
+                <Card className="min-h-[200px] max-h-[400px] overflow-y-auto bg-card overscroll-contain">
+                  <CardContent className="p-4 space-y-4">
+                    {messages.length === 0 && (
+                      <div className="flex items-center gap-3 p-4 bg-primary/5 rounded-lg">
+                        <div className="w-8 h-8 rounded-full bg-primary flex items-center justify-center shrink-0">
+                          <span className="text-xs font-medium text-primary-foreground">AI</span>
+                        </div>
+                        <div className="text-sm text-foreground">
+                          Hello! I'm your AI Health Assistant. I'm here to help you with health information, symptom guidance, and general wellness questions. {!user && "Sign in to save your chat history."} How can I assist you today?
+                        </div>
+                      </div>
+                    )}
+                    {messages.map((msg, i) => (
+                      <ChatMessage key={i} role={msg.role} content={msg.content} />
+                    ))}
+                    {loading && (
+                      <div className="flex justify-center py-4">
+                        <Loader2 className="h-6 w-6 animate-spin text-primary" />
+                      </div>
+                    )}
+                  </CardContent>
+                </Card>
+
+                <div className="space-y-4">
+                  <div className="flex flex-wrap gap-4">
+                    <LanguageSelector value={language} onChange={setLanguage} />
+                    <VoiceToggle enabled={voice} onChange={setVoice} />
+                  </div>
+
+                  <div className="space-y-2">
+                    <div className="flex items-center gap-2">
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        onClick={handleMic}
+                        disabled={loading}
+                        className={`transition-colors ${isListening ? "bg-red-100 border-red-300 text-red-600" : "bg-primary text-primary-foreground hover:bg-primary/90"}`}
+                      >
+                        <Mic className="h-4 w-4 mr-1" />
+                        Voice Input
+                      </Button>
+                    </div>
+                    
+                    <div className="flex gap-2">
+                      <Textarea
+                        value={input}
+                        onChange={(e) => setInput(e.target.value)}
+                        placeholder="Type your health question here..."
+                        className="flex-1 resize-none"
+                        rows={3}
+                        onKeyDown={(e) => {
+                          if (e.key === "Enter" && !e.shiftKey) {
+                            e.preventDefault();
+                            if (!loading) send();
+                          }
+                        }}
+                        disabled={loading}
+                        aria-label="Health question input"
+                      />
+                      <Button
+                        onClick={send}
+                        disabled={loading || !input.trim()}
+                        aria-label="Send message"
+                        className="bg-primary hover:bg-primary/90 h-auto px-6 transition-opacity"
+                        data-send-button
+                      >
+                        <Send className="h-4 w-4" />
+                      </Button>
+                    </div>
+                  </div>
+
+                  <p className="text-xs text-muted-foreground text-center">
+                    This AI assistant provides general health information only. Always consult healthcare professionals for medical advice. {!user && "Sign in to save your chat history."}
+                  </p>
+                </div>
+              </section>
+            </div>
           </div>
         </main>
       </div>
