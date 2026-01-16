@@ -9,7 +9,7 @@ import {
   User,
   Shield
 } from "lucide-react";
-import { NavLink, useNavigate } from "react-router-dom";
+import { NavLink, useNavigate, useLocation } from "react-router-dom";
 import {
   Sidebar,
   SidebarContent,
@@ -20,6 +20,7 @@ import {
   SidebarMenuItem,
   SidebarHeader,
   SidebarFooter,
+  useSidebar,
 } from "@/components/ui/sidebar";
 import { cn } from "@/lib/utils";
 import { useAuth } from "@/contexts/AuthContext";
@@ -33,6 +34,7 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { useEffect, useCallback } from "react";
+import { useIsMobile } from "@/hooks/use-mobile";
 
 const navigationItems = [
   { title: "Chat", url: "/", icon: MessageCircle },
@@ -47,7 +49,17 @@ const footerItems = [
 export function AppSidebar() {
   const { user, signOut } = useAuth();
   const { isAdminMode, checkAdminAccess, toggleAdminMode } = useAdmin();
+  const { setOpenMobile } = useSidebar();
+  const isMobile = useIsMobile();
   const navigate = useNavigate();
+  const location = useLocation();
+
+  // Auto-close sidebar on mobile when route changes
+  useEffect(() => {
+    if (isMobile) {
+      setOpenMobile(false);
+    }
+  }, [location.pathname, isMobile, setOpenMobile]);
 
   // Listen for secret key sequence
   const handleKeyDown = useCallback((e: KeyboardEvent) => {
