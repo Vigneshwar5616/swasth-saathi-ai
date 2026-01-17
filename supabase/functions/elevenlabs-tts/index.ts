@@ -7,8 +7,10 @@ const corsHeaders = {
     "authorization, x-client-info, apikey, content-type",
 };
 
-// Single clear voice for all languages - multilingual model handles accent naturally
-const VOICE_ID = "EXAVITQu4vr4xnSDxMaL"; // Sarah - clear, professional, works great with all languages
+// Voice ID - Replace with an Indian voice from ElevenLabs Voice Library
+// Go to: https://elevenlabs.io/voice-library and search "Indian" to find native Indian voices
+// Then replace this ID with your chosen voice
+const VOICE_ID = "EXAVITQu4vr4xnSDxMaL"; // Current: Sarah (placeholder until Indian voice is set)
 
 serve(async (req) => {
   if (req.method === "OPTIONS") {
@@ -47,6 +49,9 @@ serve(async (req) => {
       .trim()
       .substring(0, 5000);
 
+    // Add Indian accent instruction for multilingual model
+    const accentedText = `<speak with an Indian accent, like a professional Indian assistant> ${cleanText}`;
+
     if (!cleanText) {
       return new Response(
         JSON.stringify({ error: "No text to speak" }),
@@ -63,14 +68,14 @@ serve(async (req) => {
           "Content-Type": "application/json",
         },
         body: JSON.stringify({
-          text: cleanText,
-          model_id: "eleven_multilingual_v2", // Handles Hindi, Telugu, Tamil, etc. naturally
+          text: accentedText,
+          model_id: "eleven_multilingual_v2",
           voice_settings: {
-            stability: 0.7,         // Higher = more consistent, clear speech
-            similarity_boost: 0.8,  // Strong voice clarity
-            style: 0.0,             // Neutral, professional delivery
+            stability: 0.6,         // Balanced for natural Indian speech rhythm
+            similarity_boost: 0.85, // Strong voice clarity
+            style: 0.3,             // Slight expressiveness for Indian intonation
             use_speaker_boost: true,
-            speed: 0.85,            // Slower for clear, easy understanding
+            speed: 0.88,            // Slightly slower for clarity
           },
         }),
       }
