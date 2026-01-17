@@ -54,14 +54,12 @@ export function AppSidebar() {
   const navigate = useNavigate();
   const location = useLocation();
 
-  // Auto-collapse sidebar when route changes
+  // Auto-collapse sidebar on mobile when route changes (keep open on desktop)
   useEffect(() => {
     if (isMobile) {
       setOpenMobile(false);
-    } else {
-      setOpen(false);
     }
-  }, [location.pathname, isMobile, setOpenMobile, setOpen]);
+  }, [location.pathname, isMobile, setOpenMobile]);
 
   // Keyboard sequence for admin mode is now disabled
   // Admin mode is automatically enabled for users with admin role in database
