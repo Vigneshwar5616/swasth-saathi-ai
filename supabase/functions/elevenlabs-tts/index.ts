@@ -7,9 +7,48 @@ const corsHeaders = {
     "authorization, x-client-info, apikey, content-type",
 };
 
-// Clear Indian voice from ElevenLabs Voice Library
+// Clear Indian voice from ElevenLabs Voice Library - excellent multilingual support
 const VOICE_ID = "Oq0cIHWGcnbOGozOQv0t";
-const MODEL_ID = "eleven_multilingual_v2"; // Best for Indian languages
+const MODEL_ID = "eleven_multilingual_v2"; // Best for all Indian languages
+
+// Language-specific optimizations for clarity
+const getVoiceSettings = (langCode: string) => {
+  // Base settings optimized for clear Indian language pronunciation
+  const baseSettings = {
+    stability: 0.80,        // High stability for consistent, clear pronunciation
+    similarity_boost: 0.70, // Natural voice quality
+    style: 0.05,            // Minimal style for maximum clarity
+    use_speaker_boost: true,
+    speed: 0.75,            // Slow and clear for all words to be understood
+  };
+
+  // Fine-tune for specific language families
+  switch (langCode) {
+    case "hi-IN": // Hindi
+    case "mr-IN": // Marathi  
+    case "ur-IN": // Urdu
+      return { ...baseSettings, speed: 0.73, stability: 0.82 };
+    
+    case "bn-IN": // Bengali
+    case "or-IN": // Odia
+      return { ...baseSettings, speed: 0.72, stability: 0.83 };
+    
+    case "te-IN": // Telugu
+    case "kn-IN": // Kannada
+    case "ml-IN": // Malayalam
+    case "ta-IN": // Tamil
+      // Dravidian languages - slightly slower for complex syllables
+      return { ...baseSettings, speed: 0.70, stability: 0.85 };
+    
+    case "gu-IN": // Gujarati
+    case "pa-IN": // Punjabi
+      return { ...baseSettings, speed: 0.73, stability: 0.82 };
+    
+    case "en-IN": // English (India)
+    default:
+      return { ...baseSettings, speed: 0.78, stability: 0.78 };
+  }
+};
 
 serve(async (req) => {
   if (req.method === "OPTIONS") {
@@ -35,22 +74,27 @@ serve(async (req) => {
       );
     }
 
-    console.log(`TTS request: lang=${language}, text length=${text.length}`);
+    const langCode = language || "en-IN";
+    console.log(`TTS request: lang=${langCode}, text length=${text.length}`);
 
-    // Clean text for better pronunciation - preserve sentences
+    // Clean text for better pronunciation - preserve natural flow
     const cleanText = text
       .replace(/\*\*/g, "")
       .replace(/\*/g, "")
       .replace(/#{1,6}\s/g, "")
-      .replace(/\n+/g, " ") // Single space between sentences
+      .replace(/\n+/g, ". ") // Period + space for natural pauses between paragraphs
       .replace(/\s+/g, " ")
       .replace(/•/g, ",")
       .replace(/\[\d+\]/g, "") // Remove citation numbers like [1], [2]
+      .replace(/\.{2,}/g, ".") // Multiple periods to single
+      .replace(/\.\s*\./g, ".") // Clean up double periods
       .trim();
 
-    // No text wrapping needed - voice is natively Indian
-    // Limit to 4000 chars for faster response
-    const finalText = cleanText.substring(0, 4000);
+    // Limit to 4500 chars for complete responses
+    const finalText = cleanText.substring(0, 4500);
+    
+    // Get language-optimized voice settings
+    const voiceSettings = getVoiceSettings(langCode);
 
     if (!cleanText) {
       return new Response(
@@ -60,7 +104,7 @@ serve(async (req) => {
     }
 
     const response = await fetch(
-      `https://api.elevenlabs.io/v1/text-to-speech/${VOICE_ID}?output_format=mp3_22050_32`,
+      `https://api.elevenlabs.io/v1/text-to-speech/${VOICE_ID}?output_format=mp3_44100_128`,
       {
         method: "POST",
         headers: {
@@ -70,13 +114,7 @@ serve(async (req) => {
         body: JSON.stringify({
           text: finalText,
           model_id: MODEL_ID,
-          voice_settings: {
-            stability: 0.75,        // Higher = more consistent, clear pronunciation
-            similarity_boost: 0.75, // Natural voice quality
-            style: 0.1,             // Minimal style variation for clarity
-            use_speaker_boost: true, // Enhanced clarity
-            speed: 0.78,            // Noticeably slower for clear word pronunciation
-          },
+          voice_settings: voiceSettings,
         }),
       }
     );
