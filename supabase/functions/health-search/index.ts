@@ -155,8 +155,6 @@ Deno.serve(async (req) => {
   try {
     // Get client IP for rate limiting
     const clientIP = getClientIP(req);
-    let userId: string | undefined;
-    let rateLimit = ANONYMOUS_RATE_LIMIT;
     
     // Check for authentication - REQUIRED
     const authHeader = req.headers.get('authorization');
@@ -185,8 +183,8 @@ Deno.serve(async (req) => {
       );
     }
     
-    userId = data.claims.sub;
-    rateLimit = AUTHENTICATED_RATE_LIMIT;
+    const userId = data.claims.sub;
+    const rateLimit = AUTHENTICATED_RATE_LIMIT;
     console.log("Authenticated user:", userId);
     
     // Apply rate limiting
