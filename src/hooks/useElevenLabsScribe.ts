@@ -98,7 +98,9 @@ export function useElevenLabsScribe({
 
   const start = useCallback(async () => {
     if (isListening || isConnecting) {
-      stop();
+      // If already listening, stop
+      cleanup();
+      onEnd?.();
       return;
     }
 
@@ -190,7 +192,8 @@ export function useElevenLabsScribe({
           } else if (msg.type === "error") {
             console.error("[Scribe] Error:", msg);
             onError(msg.message || "Transcription error");
-            stop();
+            cleanup();
+            onEnd?.();
           } else if (msg.type === "session_started") {
             console.log("[Scribe] Session started successfully");
           }
@@ -202,14 +205,14 @@ export function useElevenLabsScribe({
       ws.onerror = (event) => {
         console.error("[Scribe] WebSocket error:", event);
         onError("Connection error. Please try again.");
-        stop();
+        cleanup();
+        onEnd?.();
       };
 
-      ws.onclose = (event) => {
-        console.log("[Scribe] WebSocket closed:", event.code, event.reason);
-        if (isListening) {
-          stop();
-        }
+      ws.onclose = () => {
+        console.log("[Scribe] WebSocket closed");
+        setIsListening(false);
+        setIsConnecting(false);
       };
     } catch (err: unknown) {
       const error = err as Error & { name?: string };
@@ -224,7 +227,7 @@ export function useElevenLabsScribe({
         onError(error.message || "Failed to start speech recognition");
       }
     }
-  }, [isListening, isConnecting, cleanup, stop, onTranscript, onError, onStart, languageCode]);
+  }, [isListening, isConnecting, cleanup, onTranscript, onError, onStart, onEnd, languageCode]);
 
   const startAudioProcessing = (stream: MediaStream, ws: WebSocket) => {
     console.log("[Scribe] Starting audio processing...");
