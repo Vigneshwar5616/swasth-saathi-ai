@@ -11,6 +11,7 @@ import { DashboardHeader } from "@/components/dashboard/DashboardHeader";
 import { QuickActions } from "@/components/dashboard/QuickActions";
 import { HealthTipsCarousel } from "@/components/dashboard/HealthTipsCarousel";
 import LanguageSelector from "@/components/chat/LanguageSelector";
+import { AudioPermissionRequest } from "@/components/chat/AudioPermissionRequest";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/contexts/AuthContext";
 import { useElevenLabsScribe } from "@/hooks/useElevenLabsScribe";
@@ -25,6 +26,8 @@ const Index = () => {
   const [loading, setLoading] = useState(false);
   const [isSpeaking, setIsSpeaking] = useState(false);
   const [showScrollButton, setShowScrollButton] = useState(false);
+  const [showAudioPermissionDialog, setShowAudioPermissionDialog] = useState(false);
+  const [audioPermissionsGranted, setAudioPermissionsGranted] = useState(false);
   
   const [searchQuery, setSearchQuery] = useState("");
   
@@ -122,16 +125,29 @@ const Index = () => {
     onTranscript: handleTranscript,
     onError: handleScribeError,
     onStart: handleScribeStart,
+    languageCode: language, // Pass selected language for better recognition
   });
 
-  // Handle mic button click
+  // Handle mic button click - show permission dialog first if not granted
   const handleMic = useCallback(() => {
     if (isListening || isConnecting) {
       stopScribe();
     } else {
-      startScribe();
+      // Show permission dialog if permissions not yet granted
+      if (!audioPermissionsGranted) {
+        setShowAudioPermissionDialog(true);
+      } else {
+        startScribe();
+      }
     }
-  }, [isListening, isConnecting, startScribe, stopScribe]);
+  }, [isListening, isConnecting, startScribe, stopScribe, audioPermissionsGranted]);
+
+  // Handle permissions granted - start listening automatically
+  const handlePermissionsGranted = useCallback(() => {
+    setAudioPermissionsGranted(true);
+    // Automatically start listening after permissions granted
+    startScribe();
+  }, [startScribe]);
 
   // Load user settings
   useEffect(() => {
@@ -185,6 +201,17 @@ const Index = () => {
     // Cancel any ongoing speech first
     synth.cancel();
     setIsSpeaking(false);
+    
+    // Check if speech synthesis is supported
+    if (!synth || typeof synth.speak !== "function") {
+      console.warn("Speech synthesis not supported on this device");
+      toast({
+        title: "Audio Not Available",
+        description: "Text-to-speech is not supported on this device. Please read the response.",
+        variant: "default",
+      });
+      return;
+    }
     
     // Clean text for better pronunciation
     const cleanText = text
@@ -593,7 +620,15 @@ Please explain compassionately and remove any stigma around mental health.`
   };
 
   return (
-    <div className="flex min-h-screen max-h-screen w-full overflow-hidden">
+    <>
+      {/* Audio Permission Dialog */}
+      <AudioPermissionRequest
+        open={showAudioPermissionDialog}
+        onOpenChange={setShowAudioPermissionDialog}
+        onPermissionsGranted={handlePermissionsGranted}
+      />
+
+      <div className="flex min-h-screen max-h-screen w-full overflow-hidden">
       <script
         type="application/ld+json"
         suppressHydrationWarning
@@ -775,6 +810,7 @@ Please explain compassionately and remove any stigma around mental health.`
         </main>
       </div>
     </div>
+    </>
   );
 };
 
