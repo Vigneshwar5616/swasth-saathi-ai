@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState, useCallback } from "react";
+import { useEffect, useRef, useState, useCallback } from "react";
 import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
@@ -34,69 +34,7 @@ const Index = () => {
   const chatContainerRef = useRef<HTMLDivElement>(null);
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const { toast } = useToast();
-
-  // Setup Web Speech voices with Indian preferences
-  const synth = window.speechSynthesis;
-  const [availableVoices, setAvailableVoices] = useState<SpeechSynthesisVoice[]>([]);
-  
-  // Load voices when they become available
-  useEffect(() => {
-    const loadVoices = () => {
-      const voices = synth.getVoices();
-      if (voices.length > 0) {
-        setAvailableVoices(voices);
-      }
-    };
-    
-    loadVoices();
-    synth.addEventListener?.("voiceschanged", loadVoices);
-    return () => synth.removeEventListener?.("voiceschanged", loadVoices);
-  }, [synth]);
-
-  // Find the best Indian voice for the selected language
-  const voiceForLang = useMemo(() => {
-    if (availableVoices.length === 0) return null;
-    
-    // Language code mapping for Indian languages
-    const langMap: Record<string, string[]> = {
-      "en-IN": ["en-IN", "en_IN", "English India", "English (India)"],
-      "hi-IN": ["hi-IN", "hi_IN", "Hindi", "हिंदी"],
-      "te-IN": ["te-IN", "te_IN", "Telugu", "తెలుగు"],
-      "ta-IN": ["ta-IN", "ta_IN", "Tamil", "தமிழ்"],
-      "kn-IN": ["kn-IN", "kn_IN", "Kannada", "ಕನ್ನಡ"],
-      "ml-IN": ["ml-IN", "ml_IN", "Malayalam", "മലയാളം"],
-      "mr-IN": ["mr-IN", "mr_IN", "Marathi", "मराठी"],
-      "bn-IN": ["bn-IN", "bn_IN", "Bengali", "বাংলা"],
-      "gu-IN": ["gu-IN", "gu_IN", "Gujarati", "ગુજરાતી"],
-    };
-    
-    const searchTerms = langMap[language] || [language];
-    
-    // Priority 1: Find exact Indian voice match
-    for (const term of searchTerms) {
-      const exactMatch = availableVoices.find(v => 
-        v.lang === term || 
-        v.name.toLowerCase().includes(term.toLowerCase())
-      );
-      if (exactMatch) return exactMatch;
-    }
-    
-    // Priority 2: Find any voice with Indian locale
-    const indianVoice = availableVoices.find(v => 
-      v.lang.includes("IN") || 
-      v.name.toLowerCase().includes("india") ||
-      v.name.toLowerCase().includes("indian")
-    );
-    if (indianVoice) return indianVoice;
-    
-    // Priority 3: For Indian languages, find any matching language
-    const baseLang = language.split("-")[0];
-    const langMatch = availableVoices.find(v => v.lang.startsWith(baseLang));
-    if (langMatch) return langMatch;
-    
-    // Fallback to first available
-    return availableVoices[0];
-  }, [language, availableVoices]);
+  const currentAudioRef = useRef<HTMLAudioElement | null>(null);
 
   // ElevenLabs Speech-to-Text hook for reliable multi-language transcription
   const handleTranscript = useCallback((text: string, isFinal: boolean) => {
@@ -196,211 +134,88 @@ const Index = () => {
     }
   };
 
-  // Force speak every reply - never skip, always in selected language
-  // Enhanced for iOS/Android compatibility
-  const speak = (text: string) => {
-    // Cancel any ongoing speech first
-    synth.cancel();
-    setIsSpeaking(false);
-    
-    // Check if speech synthesis is supported
-    if (!synth || typeof synth.speak !== "function") {
-      console.warn("Speech synthesis not supported on this device");
-      toast({
-        title: "Audio Not Available",
-        description: "Text-to-speech is not supported on this device. Please read the response.",
-        variant: "default",
-      });
-      return;
+  // Professional ElevenLabs TTS - supports 29 languages including Indian languages
+  const speak = useCallback(async (text: string) => {
+    // Stop any currently playing audio
+    if (currentAudioRef.current) {
+      currentAudioRef.current.pause();
+      currentAudioRef.current = null;
     }
-    
-    // Clean text for better pronunciation
-    const cleanText = text
-      .replace(/\*\*/g, "") // Remove markdown bold
-      .replace(/\*/g, "")   // Remove markdown italic
-      .replace(/#{1,6}\s/g, "") // Remove markdown headers
-      .replace(/\n+/g, ". ") // Convert newlines to pauses
-      .replace(/\s+/g, " ") // Normalize whitespace
-      .replace(/•/g, ",")   // Replace bullets with pauses
-      .replace(/[""]/g, '"') // Normalize quotes
-      .replace(/['']/g, "'") // Normalize apostrophes
-      .trim();
-    
-    if (!cleanText) {
+    setIsSpeaking(false);
+
+    if (!text || !text.trim()) {
       console.log("No text to speak");
       return;
     }
 
-    console.log("Speaking text in language:", language, "Voice:", voiceForLang?.name || "default");
+    console.log("[TTS] Speaking in language:", language);
     setIsSpeaking(true);
-    
-    // Detect platform for specific workarounds
-    const isIOS = /iPhone|iPad|iPod/i.test(navigator.userAgent);
-    const isAndroid = /Android/i.test(navigator.userAgent);
-    const isMobile = isIOS || isAndroid;
-    
-    const startSpeaking = () => {
-      // Split into smaller chunks for mobile reliability
-      // iOS cuts off after ~15 seconds, so keep chunks short
-      const maxChunkLength = isMobile ? 150 : 300;
-      const sentences = cleanText.match(/[^.!?]+[.!?]+/g) || [cleanText];
-      
-      // Combine short sentences, split long ones
-      const chunks: string[] = [];
-      let currentChunk = "";
-      
-      for (const sentence of sentences) {
-        const trimmed = sentence.trim();
-        if (!trimmed) continue;
-        
-        if (currentChunk.length + trimmed.length < maxChunkLength) {
-          currentChunk += (currentChunk ? " " : "") + trimmed;
-        } else {
-          if (currentChunk) chunks.push(currentChunk);
-          // If single sentence is too long, break it up
-          if (trimmed.length > maxChunkLength) {
-            const words = trimmed.split(/\s+/);
-            let subChunk = "";
-            for (const word of words) {
-              if (subChunk.length + word.length < maxChunkLength) {
-                subChunk += (subChunk ? " " : "") + word;
-              } else {
-                if (subChunk) chunks.push(subChunk);
-                subChunk = word;
-              }
-            }
-            if (subChunk) currentChunk = subChunk;
-          } else {
-            currentChunk = trimmed;
-          }
+
+    try {
+      const response = await fetch(
+        `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/elevenlabs-tts`,
+        {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            apikey: import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY,
+            Authorization: `Bearer ${import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY}`,
+          },
+          body: JSON.stringify({ text, language }),
         }
+      );
+
+      if (!response.ok) {
+        const err = await response.json().catch(() => ({}));
+        throw new Error(err.error || `TTS failed: ${response.status}`);
       }
-      if (currentChunk) chunks.push(currentChunk);
+
+      const data = await response.json();
       
-      console.log(`Speaking ${chunks.length} chunks on ${isIOS ? "iOS" : isAndroid ? "Android" : "desktop"}`);
-      
-      const speakChunk = (index: number) => {
-        if (index >= chunks.length) {
-          console.log("Finished speaking all chunks");
-          setIsSpeaking(false);
-          return;
-        }
-        
-        const chunkText = chunks[index].trim();
-        if (!chunkText) {
-          speakChunk(index + 1);
-          return;
-        }
-        
-        const utter = new SpeechSynthesisUtterance(chunkText);
-        
-        // Find the best voice for the language
-        const voices = synth.getVoices();
-        let selectedVoice = voiceForLang;
-        
-        if (!selectedVoice && voices.length > 0) {
-          // Try to find a matching voice
-          const langPrefix = language.split("-")[0];
-          selectedVoice = voices.find(v => v.lang === language) ||
-                          voices.find(v => v.lang.startsWith(langPrefix)) ||
-                          voices.find(v => v.lang.includes("IN")) ||
-                          voices[0];
-        }
-        
-        if (selectedVoice) {
-          utter.voice = selectedVoice;
-          console.log("Using voice:", selectedVoice.name, "for lang:", language);
-        }
-        
-        // Force the language
-        utter.lang = language;
-        
-        // Platform-specific settings
-        if (isIOS) {
-          // iOS works better with default rate
-          utter.rate = 1.0;
-          utter.pitch = 1.0;
-          utter.volume = 1.0;
-        } else if (isAndroid) {
-          // Android can handle slightly slower
-          utter.rate = 0.95;
-          utter.pitch = 1.0;
-          utter.volume = 1.0;
-        } else {
-          utter.rate = 0.9;
-          utter.pitch = 1.0;
-          utter.volume = 1.0;
-        }
-        
-        utter.onend = () => {
-          console.log("Chunk", index + 1, "of", chunks.length, "completed");
-          // Delay between chunks - longer on mobile for reliability
-          const delay = isMobile ? 200 : 100;
-          setTimeout(() => speakChunk(index + 1), delay);
-        };
-        
-        utter.onerror = (e) => {
-          console.error("TTS error on chunk", index, ":", e.error);
-          // On mobile, try to recover by resuming
-          if (isMobile) {
-            synth.cancel();
-            setTimeout(() => speakChunk(index + 1), 300);
-          } else {
-            setTimeout(() => speakChunk(index + 1), 100);
-          }
-        };
-        
-        // Speak the utterance
-        synth.speak(utter);
-        
-        // Mobile workarounds
-        if (isMobile) {
-          // Chrome/Android bug: randomly pauses - keep resuming
-          const resumeInterval = setInterval(() => {
-            if (synth.paused) {
-              console.log("Resuming paused speech");
-              synth.resume();
-            }
-            // Clear once this chunk should be done
-          }, 250);
-          
-          utter.onend = () => {
-            clearInterval(resumeInterval);
-            console.log("Chunk", index + 1, "of", chunks.length, "completed");
-            setTimeout(() => speakChunk(index + 1), 200);
-          };
-          
-          utter.onerror = (e) => {
-            clearInterval(resumeInterval);
-            console.error("TTS error on chunk", index, ":", e.error);
-            synth.cancel();
-            setTimeout(() => speakChunk(index + 1), 300);
-          };
-        }
+      if (!data.audio) {
+        throw new Error("No audio data received");
+      }
+
+      // Play audio using data URI (handles base64 natively)
+      const audioUrl = `data:audio/mpeg;base64,${data.audio}`;
+      const audio = new Audio(audioUrl);
+      currentAudioRef.current = audio;
+
+      audio.onended = () => {
+        console.log("[TTS] Finished speaking");
+        setIsSpeaking(false);
+        currentAudioRef.current = null;
       };
 
-      // Start speaking first chunk
-      speakChunk(0);
-    };
-
-    // Ensure voices are loaded before speaking
-    const voices = synth.getVoices();
-    if (voices.length === 0) {
-      // Wait for voices to load
-      const handleVoicesChanged = () => {
-        synth.removeEventListener("voiceschanged", handleVoicesChanged);
-        startSpeaking();
+      audio.onerror = (e) => {
+        console.error("[TTS] Audio playback error:", e);
+        setIsSpeaking(false);
+        currentAudioRef.current = null;
       };
-      synth.addEventListener("voiceschanged", handleVoicesChanged);
-      // Fallback timeout if voices never load
-      setTimeout(() => {
-        synth.removeEventListener("voiceschanged", handleVoicesChanged);
-        startSpeaking();
-      }, 500);
-    } else {
-      startSpeaking();
+
+      await audio.play();
+    } catch (error) {
+      console.error("[TTS] Error:", error);
+      setIsSpeaking(false);
+      
+      // Fallback to browser TTS if ElevenLabs fails
+      const synth = window.speechSynthesis;
+      if (synth && typeof synth.speak === "function") {
+        console.log("[TTS] Falling back to browser TTS");
+        const utterance = new SpeechSynthesisUtterance(text);
+        utterance.lang = language;
+        utterance.onend = () => setIsSpeaking(false);
+        utterance.onerror = () => setIsSpeaking(false);
+        synth.speak(utterance);
+      } else {
+        toast({
+          title: "Audio Error",
+          description: "Could not play voice response. Please read the text.",
+          variant: "destructive",
+        });
+      }
     }
-  };
+  }, [language, toast]);
 
 
   // Helper to get auth headers
