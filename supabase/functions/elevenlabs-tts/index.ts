@@ -7,8 +7,9 @@ const corsHeaders = {
     "authorization, x-client-info, apikey, content-type",
 };
 
-// Indian voice from ElevenLabs Voice Library
+// Clear Indian voice from ElevenLabs Voice Library
 const VOICE_ID = "Oq0cIHWGcnbOGozOQv0t";
+const MODEL_ID = "eleven_multilingual_v2"; // Best for Indian languages
 
 serve(async (req) => {
   if (req.method === "OPTIONS") {
@@ -36,19 +37,20 @@ serve(async (req) => {
 
     console.log(`TTS request: lang=${language}, text length=${text.length}`);
 
-    // Clean text for better pronunciation
+    // Clean text for better pronunciation - preserve sentences
     const cleanText = text
       .replace(/\*\*/g, "")
       .replace(/\*/g, "")
       .replace(/#{1,6}\s/g, "")
-      .replace(/\n+/g, ". ")
+      .replace(/\n+/g, " ") // Single space between sentences
       .replace(/\s+/g, " ")
       .replace(/•/g, ",")
-      .trim()
-      .substring(0, 5000);
+      .replace(/\[\d+\]/g, "") // Remove citation numbers like [1], [2]
+      .trim();
 
-    // Use clean text directly - the voice is already Indian
-    const finalText = cleanText;
+    // No text wrapping needed - voice is natively Indian
+    // Limit to 4000 chars for faster response
+    const finalText = cleanText.substring(0, 4000);
 
     if (!cleanText) {
       return new Response(
@@ -58,7 +60,7 @@ serve(async (req) => {
     }
 
     const response = await fetch(
-      `https://api.elevenlabs.io/v1/text-to-speech/${VOICE_ID}?output_format=mp3_44100_128`,
+      `https://api.elevenlabs.io/v1/text-to-speech/${VOICE_ID}?output_format=mp3_22050_32`,
       {
         method: "POST",
         headers: {
@@ -67,13 +69,13 @@ serve(async (req) => {
         },
         body: JSON.stringify({
           text: finalText,
-          model_id: "eleven_multilingual_v2",
+          model_id: MODEL_ID,
           voice_settings: {
-            stability: 0.65,        // Clear and consistent
-            similarity_boost: 0.8,  // Natural voice clarity
-            style: 0.2,             // Subtle expressiveness
-            use_speaker_boost: true,
-            speed: 0.85,            // Slower for clarity
+            stability: 0.75,        // Higher = more consistent, clear pronunciation
+            similarity_boost: 0.75, // Natural voice quality
+            style: 0.1,             // Minimal style variation for clarity
+            use_speaker_boost: true, // Enhanced clarity
+            speed: 0.78,            // Noticeably slower for clear word pronunciation
           },
         }),
       }
