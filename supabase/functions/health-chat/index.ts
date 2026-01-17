@@ -424,7 +424,7 @@ RESPONSE FORMAT:
         model: "sonar",
         messages: finalMessages,
         temperature: 0.4,
-        max_tokens: 800,
+        max_tokens: 1200, // Increased for complete responses
         stream: stream,
       }),
     });
