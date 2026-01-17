@@ -104,6 +104,24 @@ export function AudioPermissionRequest({
         await audioContext.resume();
       }
       
+      // iOS: Create and play a silent HTML Audio element to "unlock" audio playback
+      // This is critical for iOS to allow subsequent audio.play() calls
+      if (platform === "ios") {
+        try {
+          const silentAudio = new Audio();
+          silentAudio.setAttribute("playsinline", "true");
+          silentAudio.setAttribute("webkit-playsinline", "true");
+          // Create a tiny silent MP3 (base64 encoded)
+          const silentMp3 = "data:audio/mp3;base64,SUQzBAAAAAAAI1RTU0UAAAAPAAADTGF2ZjU4Ljc2LjEwMAAAAAAAAAAAAAAA//tQAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAWGluZwAAAA8AAAACAAABhgC7u7u7u7u7u7u7u7u7u7u7u7u7u7u7u7u7u7u7u7u7u7u7u7u7u7u7u7u7u7u7u7u7u7u7//////////////////////////////////////////////////////////////////8AAAAATGF2YzU4LjEzAAAAAAAAAAAAAAAAJAAAAAAAAAAAAYYmZ3BCAAAAAAAAAAAAAAAAAAAA//tQZAAP8AAAaQAAAAgAAA0gAAABAAABpAAAACAAADSAAAAETEFNRTMuMTAwVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVQ==";
+          silentAudio.src = silentMp3;
+          silentAudio.volume = 0.01;
+          await silentAudio.play().catch(() => {});
+          silentAudio.pause();
+        } catch (e) {
+          console.log("Silent audio unlock attempt:", e);
+        }
+      }
+      
       // iOS silent mode detection: play audio and check if it actually played
       const oscillator = audioContext.createOscillator();
       const gainNode = audioContext.createGain();
