@@ -3,7 +3,7 @@ import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
 import { useToast } from "@/hooks/use-toast";
-import { Mic, Send, Loader2, ArrowDown } from "lucide-react";
+import { Mic, Send, Loader2, ArrowDown, Volume2 } from "lucide-react";
 import { ChatMessage } from "@/components/chat/ChatMessage";
 import { AppSidebar } from "@/components/layout/AppSidebar";
 import { SidebarTrigger } from "@/components/ui/sidebar";
@@ -11,7 +11,6 @@ import { DashboardHeader } from "@/components/dashboard/DashboardHeader";
 import { QuickActions } from "@/components/dashboard/QuickActions";
 import { HealthTipsCarousel } from "@/components/dashboard/HealthTipsCarousel";
 import LanguageSelector from "@/components/chat/LanguageSelector";
-import VoiceToggle from "@/components/chat/VoiceToggle";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/contexts/AuthContext";
 
@@ -23,7 +22,7 @@ const Index = () => {
   const [messages, setMessages] = useState<Message[]>([]);
   const [input, setInput] = useState("");
   const [loading, setLoading] = useState(false);
-  const [voice, setVoice] = useState(true);
+  const [isSpeaking, setIsSpeaking] = useState(false);
   const [isListening, setIsListening] = useState(false);
   const [showScrollButton, setShowScrollButton] = useState(false);
   const [permissionsGranted, setPermissionsGranted] = useState(false);
@@ -165,7 +164,7 @@ const Index = () => {
     
     const { data } = await supabase
       .from("user_settings")
-      .select("preferred_language, voice_enabled")
+      .select("preferred_language")
       .eq("user_id", user.id)
       .single();
     
@@ -173,21 +172,14 @@ const Index = () => {
       if (data.preferred_language) {
         setLanguage(data.preferred_language === "en" ? "en-IN" : `${data.preferred_language}-IN`);
       }
-      if (data.voice_enabled !== null) {
-        setVoice(data.voice_enabled);
-      }
     }
   };
 
-  // Enhanced speak function with optimized browser TTS for Indian languages
+  // Force speak every reply - never skip, always in selected language
   const speak = (text: string) => {
-    if (!voice) {
-      console.log("Voice disabled, skipping TTS");
-      return;
-    }
-    
-    // Cancel any ongoing speech
+    // Cancel any ongoing speech first
     synth.cancel();
+    setIsSpeaking(false);
     
     // Clean text for better pronunciation
     const cleanText = text
@@ -204,43 +196,97 @@ const Index = () => {
       return;
     }
 
-    console.log("Speaking text in language:", language, "Voice:", voiceForLang?.name);
+    console.log("Speaking text in language:", language, "Voice:", voiceForLang?.name || "default");
+    setIsSpeaking(true);
     
-    // Split into smaller chunks for more natural pacing
-    const chunks = cleanText.match(/[^.!?]+[.!?]+/g) || [cleanText];
-    
-    const speakChunk = (index: number) => {
-      if (index >= chunks.length) return;
+    // On mobile, we need to trigger speech from user interaction
+    // Use a workaround for Chrome/Safari mobile restrictions
+    const startSpeaking = () => {
+      // Split into smaller chunks for more natural pacing
+      const chunks = cleanText.match(/[^.!?]+[.!?]+/g) || [cleanText];
       
-      const utter = new SpeechSynthesisUtterance(chunks[index].trim());
-      
-      if (voiceForLang) {
-        utter.voice = voiceForLang;
-      }
-      
-      utter.lang = language;
-      
-      // Optimized settings for natural Indian speech
-      utter.rate = 0.9;   // Slightly slower for clarity
-      utter.pitch = 1.05; // Subtle warmth
-      utter.volume = 1.0;
-      
-      utter.onend = () => {
-        // Speak next chunk after current one ends
-        speakChunk(index + 1);
+      const speakChunk = (index: number) => {
+        if (index >= chunks.length) {
+          console.log("Finished speaking all chunks");
+          setIsSpeaking(false);
+          return;
+        }
+        
+        const chunkText = chunks[index].trim();
+        if (!chunkText) {
+          speakChunk(index + 1);
+          return;
+        }
+        
+        const utter = new SpeechSynthesisUtterance(chunkText);
+        
+        // Find the best voice for the language
+        const voices = synth.getVoices();
+        let selectedVoice = voiceForLang;
+        
+        if (!selectedVoice && voices.length > 0) {
+          // Try to find a matching voice
+          const langPrefix = language.split("-")[0];
+          selectedVoice = voices.find(v => v.lang === language) ||
+                          voices.find(v => v.lang.startsWith(langPrefix)) ||
+                          voices.find(v => v.lang.includes("IN")) ||
+                          voices[0];
+        }
+        
+        if (selectedVoice) {
+          utter.voice = selectedVoice;
+          console.log("Using voice:", selectedVoice.name, "for lang:", language);
+        }
+        
+        // Force the language
+        utter.lang = language;
+        
+        // Optimized settings for natural Indian speech
+        utter.rate = 0.9;   // Slightly slower for clarity
+        utter.pitch = 1.0;  // Neutral pitch
+        utter.volume = 1.0; // Full volume
+        
+        utter.onend = () => {
+          console.log("Chunk", index + 1, "of", chunks.length, "completed");
+          // Small delay between chunks for natural pacing
+          setTimeout(() => speakChunk(index + 1), 100);
+        };
+        
+        utter.onerror = (e) => {
+          console.error("TTS error on chunk", index, ":", e.error);
+          // Continue with next chunk even on error
+          setTimeout(() => speakChunk(index + 1), 100);
+        };
+        
+        // Chrome bug workaround - pause and resume to prevent cutting off
+        synth.speak(utter);
+        
+        // Chrome mobile fix: resume if paused
+        if (synth.paused) {
+          synth.resume();
+        }
       };
-      
-      utter.onerror = (e) => {
-        console.error("TTS error:", e.error);
-        // Try next chunk even on error
-        speakChunk(index + 1);
-      };
-      
-      synth.speak(utter);
+
+      // Start speaking first chunk
+      speakChunk(0);
     };
 
-    // Start speaking first chunk
-    speakChunk(0);
+    // Ensure voices are loaded before speaking
+    if (synth.getVoices().length === 0) {
+      // Wait for voices to load
+      const handleVoicesChanged = () => {
+        synth.removeEventListener("voiceschanged", handleVoicesChanged);
+        startSpeaking();
+      };
+      synth.addEventListener("voiceschanged", handleVoicesChanged);
+      // Fallback timeout if voices never load
+      setTimeout(() => {
+        synth.removeEventListener("voiceschanged", handleVoicesChanged);
+        startSpeaking();
+      }, 500);
+    } else {
+      startSpeaking();
+    }
   };
 
   const handleMic = async () => {
@@ -744,9 +790,14 @@ Please explain compassionately and remove any stigma around mental health.`
                 </div>
 
                 <div className="space-y-4">
-                  <div className="flex flex-wrap gap-4">
+                  <div className="flex flex-wrap items-center gap-4">
                     <LanguageSelector value={language} onChange={setLanguage} />
-                    <VoiceToggle enabled={voice} onChange={setVoice} />
+                    {isSpeaking && (
+                      <div className="flex items-center gap-2 text-primary animate-pulse">
+                        <Volume2 className="h-4 w-4" />
+                        <span className="text-sm font-medium">Speaking...</span>
+                      </div>
+                    )}
                   </div>
 
                   <div className="space-y-2">
