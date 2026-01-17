@@ -66,10 +66,11 @@ serve(async (req) => {
           text: cleanText,
           model_id: "eleven_multilingual_v2", // Handles Hindi, Telugu, Tamil, etc. naturally
           voice_settings: {
-            stability: 0.5,
-            similarity_boost: 0.75,
-            style: 0.0,
+            stability: 0.7,         // Higher = more consistent, clear speech
+            similarity_boost: 0.8,  // Strong voice clarity
+            style: 0.0,             // Neutral, professional delivery
             use_speaker_boost: true,
+            speed: 0.85,            // Slower for clear, easy understanding
           },
         }),
       }

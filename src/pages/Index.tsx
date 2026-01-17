@@ -334,7 +334,7 @@ const Index = () => {
       let buffer = "";
       
       // Add placeholder assistant message that we'll update
-      setMessages(curr => [...curr.filter(m => m.content && m.content.trim().length > 0), { role: "assistant", content: "..." }]);
+      setMessages(curr => [...curr.filter(m => m.content && m.content.trim().length > 0), { role: "assistant", content: "" }]);
       
       while (true) {
         const { done, value } = await reader.read();
@@ -366,7 +366,7 @@ const Index = () => {
       }
       
       // If no streaming content, try non-streaming fallback
-      if (!assistantContent || assistantContent === "...") {
+      if (!assistantContent || assistantContent.length === 0) {
         const fallbackHeaders = await getAuthHeaders();
         const fallbackResp = await fetchWithRetry(
           `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/health-chat`,
@@ -397,7 +397,8 @@ const Index = () => {
         });
       }
       
-      if (assistantContent && assistantContent !== "...") {
+      // Speak immediately when we have content
+      if (assistantContent && assistantContent !== "..." && assistantContent.length > 20) {
         speak(assistantContent);
       }
       
@@ -419,7 +420,7 @@ const Index = () => {
     } catch (e: any) {
       console.error('Chat error:', e);
       // Remove the placeholder message on error
-      setMessages(curr => curr.filter(m => m.content !== "..." && m.content.trim().length > 0));
+      setMessages(curr => curr.filter(m => m.content.length > 0));
       
       let description = "Please try again.";
       if (e?.message?.includes('timeout')) {
