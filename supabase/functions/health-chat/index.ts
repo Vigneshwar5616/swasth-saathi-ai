@@ -291,13 +291,37 @@ Deno.serve(async (req) => {
       });
     }
 
+    // Get language name for clearer instruction
+    const languageNames: Record<string, string> = {
+      'en-IN': 'English',
+      'hi-IN': 'Hindi (हिंदी)',
+      'te-IN': 'Telugu (తెలుగు)',
+      'ta-IN': 'Tamil (தமிழ்)',
+      'kn-IN': 'Kannada (ಕನ್ನಡ)',
+      'ml-IN': 'Malayalam (മലയാളം)',
+      'mr-IN': 'Marathi (मराठी)',
+      'bn-IN': 'Bengali (বাংলা)',
+      'gu-IN': 'Gujarati (ગુજરાતી)',
+      'pa-IN': 'Punjabi (ਪੰਜਾਬੀ)',
+      'or-IN': 'Odia (ଓଡ଼ିଆ)',
+      'ur-IN': 'Urdu (اردو)',
+    };
+    
+    const targetLanguage = languageNames[language!] || language || 'English';
+
     // Comprehensive system prompt for informative responses
     const systemPrompt = `You are Aarogyasri, a knowledgeable and caring health advisor from India - like a trusted family doctor who explains things thoroughly.
+
+CRITICAL LANGUAGE REQUIREMENT:
+- You MUST respond ONLY in ${targetLanguage}. This is absolutely mandatory.
+- Do NOT mix languages. Every single word of your response must be in ${targetLanguage}.
+- If the user asks in a different language, still respond ONLY in ${targetLanguage}.
+- For ${targetLanguage === 'English' ? 'English' : 'non-English languages'}, use the native script (${targetLanguage === 'Hindi (हिंदी)' ? 'Devanagari' : targetLanguage === 'Telugu (తెలుగు)' ? 'Telugu script' : targetLanguage === 'Tamil (தமிழ்)' ? 'Tamil script' : targetLanguage === 'Kannada (ಕನ್ನಡ)' ? 'Kannada script' : targetLanguage === 'Malayalam (മലയാളം)' ? 'Malayalam script' : targetLanguage === 'Bengali (বাংলা)' ? 'Bengali script' : targetLanguage === 'Gujarati (ગુજરાતી)' ? 'Gujarati script' : targetLanguage === 'Marathi (मराठी)' ? 'Devanagari' : targetLanguage === 'Punjabi (ਪੰਜਾਬੀ)' ? 'Gurmukhi' : targetLanguage === 'Odia (ଓଡ଼ିଆ)' ? 'Odia script' : targetLanguage === 'Urdu (اردو)' ? 'Urdu script' : 'native script'}).
 
 RESPONSE STYLE:
 - Give detailed, informative answers that educate the user about their health concern
 - Explain the "why" behind your advice - help users understand their body
-- Use warm, conversational language with natural Hindi/Telugu phrases when appropriate
+- Use warm, conversational language appropriate for ${targetLanguage}
 - Structure longer answers with clear sections or bullet points for readability
 
 CONTENT GUIDELINES:
@@ -311,14 +335,13 @@ IMPORTANT RULES:
 - NEVER include citation numbers, reference numbers, or brackets like [1], [2], etc.
 - Do not add source references or footnotes at the end
 - Write naturally as if speaking to a family member, not an academic paper
-- Respond in ${language || "English"} naturally
 - For serious symptoms, warmly but clearly advise consulting a doctor
 
 RESPONSE FORMAT:
 - Aim for 200-300 words for a complete, helpful response
 - Start with acknowledgment and reassurance
 - Provide the main information with practical tips
-- End with encouragement and care: "Take care of yourself!", "Wishing you good health!"`;
+- End with encouragement and care in ${targetLanguage}`;
 
     // Filter only user/assistant messages
     const validMessages = messages.filter(m => 
