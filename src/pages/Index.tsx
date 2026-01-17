@@ -26,6 +26,7 @@ const Index = () => {
   const [voice, setVoice] = useState(true);
   const [isListening, setIsListening] = useState(false);
   const [showScrollButton, setShowScrollButton] = useState(false);
+  const [permissionsGranted, setPermissionsGranted] = useState(false);
   
   const [searchQuery, setSearchQuery] = useState("");
   
@@ -97,6 +98,37 @@ const Index = () => {
     return availableVoices[0];
   }, [language, availableVoices]);
 
+  // Request permissions upfront on mobile
+  useEffect(() => {
+    const requestPermissions = async () => {
+      try {
+        // Request microphone permission
+        const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+        // Stop all tracks immediately - we just needed to request permission
+        stream.getTracks().forEach(track => track.stop());
+        setPermissionsGranted(true);
+        console.log("Microphone permission granted");
+        
+        // Test TTS is available
+        if (synth && availableVoices.length > 0) {
+          console.log("TTS available with", availableVoices.length, "voices");
+        }
+      } catch (err) {
+        console.warn("Microphone permission not granted:", err);
+        toast({
+          title: "Permissions Required",
+          description: "Please allow microphone access for voice features to work.",
+          variant: "destructive"
+        });
+      }
+    };
+
+    // Request permissions after voices are loaded
+    if (availableVoices.length > 0) {
+      requestPermissions();
+    }
+  }, [availableVoices, synth, toast]);
+
   // Load user settings
   useEffect(() => {
     if (user) {
@@ -149,7 +181,10 @@ const Index = () => {
 
   // Enhanced speak function with optimized browser TTS for Indian languages
   const speak = (text: string) => {
-    if (!voice) return;
+    if (!voice) {
+      console.log("Voice disabled, skipping TTS");
+      return;
+    }
     
     // Cancel any ongoing speech
     synth.cancel();
@@ -164,11 +199,20 @@ const Index = () => {
       .replace(/•/g, ",")   // Replace bullets with pauses
       .trim();
     
+    if (!cleanText) {
+      console.log("No text to speak");
+      return;
+    }
+
+    console.log("Speaking text in language:", language, "Voice:", voiceForLang?.name);
+    
     // Split into smaller chunks for more natural pacing
     const chunks = cleanText.match(/[^.!?]+[.!?]+/g) || [cleanText];
     
-    chunks.forEach((chunk, index) => {
-      const utter = new SpeechSynthesisUtterance(chunk.trim());
+    const speakChunk = (index: number) => {
+      if (index >= chunks.length) return;
+      
+      const utter = new SpeechSynthesisUtterance(chunks[index].trim());
       
       if (voiceForLang) {
         utter.voice = voiceForLang;
@@ -181,31 +225,61 @@ const Index = () => {
       utter.pitch = 1.05; // Subtle warmth
       utter.volume = 1.0;
       
-      // Add small delay between sentences for natural pacing
-      if (index > 0) {
-        setTimeout(() => synth.speak(utter), index * 100);
-      } else {
-        synth.speak(utter);
-      }
-    });
+      utter.onend = () => {
+        // Speak next chunk after current one ends
+        speakChunk(index + 1);
+      };
+      
+      utter.onerror = (e) => {
+        console.error("TTS error:", e.error);
+        // Try next chunk even on error
+        speakChunk(index + 1);
+      };
+      
+      synth.speak(utter);
+    };
+
+    // Start speaking first chunk
+    speakChunk(0);
   };
 
   const handleMic = async () => {
-    if (isListening) {
-      if (recognitionRef.current) {
+    // Stop any existing recognition first
+    if (recognitionRef.current) {
+      try {
         recognitionRef.current.stop();
-        setIsListening(false);
+      } catch (e) {
+        // Ignore errors when stopping
       }
+      recognitionRef.current = null;
+    }
+
+    if (isListening) {
+      setIsListening(false);
       return;
     }
 
     try {
+      // Always request microphone permission first
+      try {
+        const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+        stream.getTracks().forEach(track => track.stop());
+      } catch (permErr) {
+        toast({ 
+          title: "Microphone Access Required", 
+          description: "Please allow microphone access in your browser settings.",
+          variant: "destructive"
+        });
+        return;
+      }
+
       const SR = (window as any).webkitSpeechRecognition || (window as any).SpeechRecognition;
       if (!SR) {
         toast({ title: "Speech not supported", description: "Your browser doesn't support speech recognition." });
         return;
       }
       
+      // Create a fresh instance each time
       const rec: any = new SR();
       recognitionRef.current = rec;
       rec.lang = language;
@@ -224,18 +298,25 @@ const Index = () => {
           setInput(transcript);
           if (e.results?.[0]?.isFinal) {
             setIsListening(false);
+            recognitionRef.current = null;
           }
         }
       };
       
       rec.onerror = (event: any) => {
         setIsListening(false);
+        recognitionRef.current = null;
         console.error("Speech recognition error:", event.error);
+        
+        // Don't show error for aborted (user stopped) or no-speech
+        if (event.error === 'aborted') return;
+        
         let errorMessage = "Couldn't capture audio. Check permissions.";
         if (event.error === 'not-allowed') {
           errorMessage = "Microphone access denied. Please allow microphone permissions.";
         } else if (event.error === 'no-speech') {
           errorMessage = "No speech detected. Please try again.";
+          return; // Don't show toast for no-speech
         } else if (event.error === 'network') {
           errorMessage = "Network error. Check your internet connection.";
         }
@@ -244,11 +325,13 @@ const Index = () => {
       
       rec.onend = () => {
         setIsListening(false);
+        recognitionRef.current = null;
       };
       
       rec.start();
     } catch (e) {
       setIsListening(false);
+      recognitionRef.current = null;
       toast({ title: "Mic error", description: String(e) });
     }
   };
