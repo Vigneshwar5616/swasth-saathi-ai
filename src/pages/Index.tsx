@@ -312,55 +312,66 @@ const Index = () => {
     }
   };
 
-  const handleMic = async () => {
-    const isIOS = /iPad|iPhone|iPod/.test(navigator.userAgent);
-    
-    // Stop any existing recognition first
+  // Clean up speech recognition when language changes
+  const cleanupRecognition = () => {
     if (recognitionRef.current) {
       try {
-        recognitionRef.current.stop();
+        const rec = recognitionRef.current as any;
+        rec.onresult = null;
+        rec.onerror = null;
+        rec.onend = null;
+        rec.onstart = null;
+        rec.stop();
       } catch (e) {
         // Ignore errors when stopping
       }
       recognitionRef.current = null;
     }
+    setIsListening(false);
+  };
 
-    if (isListening) {
-      setIsListening(false);
-      return;
-    }
+  // Reset speech recognition when language changes
+  useEffect(() => {
+    cleanupRecognition();
+    console.log("Language changed to:", language, "- speech recognition reset");
+  }, [language]);
+
+  const handleMic = async () => {
+    const isIOS = /iPad|iPhone|iPod/.test(navigator.userAgent);
+    
+    // Always clean up existing recognition first
+    cleanupRecognition();
+    
+    // Small delay to ensure cleanup is complete
+    await new Promise(resolve => setTimeout(resolve, 100));
 
     try {
-      // For iOS: Re-enable the stored stream tracks OR request fresh permission
-      if (isIOS && audioStreamRef.current) {
-        // Re-enable the stored audio tracks
-        audioStreamRef.current.getAudioTracks().forEach(track => {
-          track.enabled = true;
-        });
-        console.log("iOS: Re-enabled stored audio tracks");
-      } else {
-        // Request microphone permission fresh
-        try {
-          const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
-          if (isIOS) {
-            // Store for future use on iOS
-            if (audioStreamRef.current) {
-              audioStreamRef.current.getTracks().forEach(t => t.stop());
-            }
-            audioStreamRef.current = stream;
-          } else {
-            stream.getTracks().forEach(track => track.stop());
+      // Request fresh microphone permission each time to avoid stale streams
+      try {
+        const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+        
+        if (isIOS) {
+          // On iOS, replace any existing stream
+          if (audioStreamRef.current) {
+            audioStreamRef.current.getTracks().forEach(t => t.stop());
           }
-          setPermissionsGranted(true);
-        } catch (permErr: any) {
-          console.error("Mic permission error:", permErr);
-          toast({ 
-            title: "Microphone Access Required", 
-            description: "Please go to Settings and allow microphone access for this website.",
-            variant: "destructive"
-          });
-          return;
+          audioStreamRef.current = stream;
+          console.log("iOS: Fresh audio stream obtained");
+        } else {
+          // On other platforms, we can stop the stream after permission check
+          stream.getTracks().forEach(track => track.stop());
         }
+        setPermissionsGranted(true);
+      } catch (permErr: any) {
+        console.error("Mic permission error:", permErr);
+        toast({ 
+          title: "Microphone Access Required", 
+          description: isIOS 
+            ? "Please go to Settings > Safari > Microphone and allow access, then reload."
+            : "Please allow microphone access in your browser settings.",
+          variant: "destructive"
+        });
+        return;
       }
 
       const SR = (window as any).webkitSpeechRecognition || (window as any).SpeechRecognition;
@@ -369,17 +380,20 @@ const Index = () => {
         return;
       }
       
-      // Create a fresh instance each time
+      // Create a completely fresh instance with current language
       const rec: any = new SR();
-      recognitionRef.current = rec;
-      rec.lang = language;
+      rec.lang = language; // Use current language setting
       rec.interimResults = true;
       rec.maxAlternatives = 1;
       rec.continuous = false;
       
+      // Store reference only after configuration
+      recognitionRef.current = rec;
+      
       rec.onstart = () => {
         setIsListening(true);
-        toast({ title: "Listening...", description: "Speak now, I'm listening!" });
+        const langName = language.split("-")[0].toUpperCase();
+        toast({ title: "Listening...", description: `Speak now in ${langName}!` });
       };
       
       rec.onresult = (e: SpeechRecognitionEvent) => {
@@ -388,48 +402,30 @@ const Index = () => {
           setInput(transcript);
           if (e.results?.[0]?.isFinal) {
             setIsListening(false);
-            // On iOS, mute tracks after use instead of destroying recognition
-            if (isIOS && audioStreamRef.current) {
-              audioStreamRef.current.getAudioTracks().forEach(track => {
-                track.enabled = false;
-              });
-            }
           }
         }
       };
       
       rec.onerror = (event: any) => {
-        setIsListening(false);
         console.error("Speech recognition error:", event.error);
-        
-        // On iOS, mute tracks on error
-        if (isIOS && audioStreamRef.current) {
-          audioStreamRef.current.getAudioTracks().forEach(track => {
-            track.enabled = false;
-          });
-        }
+        cleanupRecognition();
         
         // Don't show error for aborted (user stopped) or no-speech
         if (event.error === 'aborted') return;
         
         let errorMessage = "Couldn't capture audio. Please try again.";
         if (event.error === 'not-allowed') {
-          errorMessage = "Microphone access denied. Please go to Settings > Safari > Microphone and allow access.";
+          errorMessage = isIOS
+            ? "Microphone access denied. Go to Settings > Safari > Microphone."
+            : "Microphone access denied. Please allow in browser settings.";
         } else if (event.error === 'no-speech') {
-          errorMessage = "No speech detected. Please try again.";
           return; // Don't show toast for no-speech
         } else if (event.error === 'network') {
           errorMessage = "Network error. Check your internet connection.";
         } else if (event.error === 'audio-capture') {
-          errorMessage = "Could not capture audio. Please check microphone permissions in Settings.";
+          errorMessage = "Could not capture audio. Please check microphone permissions.";
         } else if (event.error === 'service-not-allowed') {
-          // iOS specific: need to request permission again
-          errorMessage = "Speech recognition not allowed. Please reload the page and allow when prompted.";
-          // Clear the stored stream to force fresh permission request
-          if (audioStreamRef.current) {
-            audioStreamRef.current.getTracks().forEach(t => t.stop());
-            audioStreamRef.current = null;
-          }
+          errorMessage = "Speech recognition unavailable. Please reload and try again.";
           setPermissionsGranted(false);
         }
         toast({ title: "Mic error", description: errorMessage, variant: "destructive" });
@@ -437,17 +433,14 @@ const Index = () => {
       
       rec.onend = () => {
         setIsListening(false);
-        // On iOS, mute tracks after recognition ends
-        if (isIOS && audioStreamRef.current) {
-          audioStreamRef.current.getAudioTracks().forEach(track => {
-            track.enabled = false;
-          });
-        }
+        // Clear reference to allow fresh instance next time
+        recognitionRef.current = null;
       };
       
       rec.start();
+      console.log("Speech recognition started for language:", language);
     } catch (e: any) {
-      setIsListening(false);
+      cleanupRecognition();
       console.error("Mic error:", e);
       toast({ title: "Mic error", description: e?.message || String(e), variant: "destructive" });
     }
