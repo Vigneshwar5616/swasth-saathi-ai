@@ -1,12 +1,19 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from "@/components/ui/dialog";
-import { Mic, Volume2, CheckCircle, XCircle, Loader2 } from "lucide-react";
+import { Mic, Volume2, CheckCircle, XCircle, Loader2, AlertTriangle } from "lucide-react";
 
 interface AudioPermissionRequestProps {
   onPermissionsGranted: () => void;
   open: boolean;
   onOpenChange: (open: boolean) => void;
+}
+
+// Persistent AudioContext to keep audio unlocked across the app
+let globalAudioContext: AudioContext | null = null;
+
+export function getGlobalAudioContext(): AudioContext | null {
+  return globalAudioContext;
 }
 
 export function AudioPermissionRequest({ 
@@ -15,8 +22,23 @@ export function AudioPermissionRequest({
   onOpenChange 
 }: AudioPermissionRequestProps) {
   const [micStatus, setMicStatus] = useState<"pending" | "granted" | "denied" | "checking">("pending");
-  const [audioStatus, setAudioStatus] = useState<"pending" | "granted" | "checking">("pending");
+  const [audioStatus, setAudioStatus] = useState<"pending" | "granted" | "checking" | "failed">("pending");
   const [isTestingAudio, setIsTestingAudio] = useState(false);
+  const [isSilentMode, setIsSilentMode] = useState(false);
+  const [platform, setPlatform] = useState<"ios" | "android" | "desktop">("desktop");
+  const audioContextRef = useRef<AudioContext | null>(null);
+
+  // Detect platform on mount
+  useEffect(() => {
+    const ua = navigator.userAgent.toLowerCase();
+    if (/iphone|ipad|ipod/.test(ua)) {
+      setPlatform("ios");
+    } else if (/android/.test(ua)) {
+      setPlatform("android");
+    } else {
+      setPlatform("desktop");
+    }
+  }, []);
 
   // Check if mic permission was already granted
   useEffect(() => {
@@ -59,74 +81,141 @@ export function AudioPermissionRequest({
   const testAudioOutput = async () => {
     setIsTestingAudio(true);
     setAudioStatus("checking");
+    setIsSilentMode(false);
     
     try {
-      // Create a short beep sound to test audio output and unlock audio on mobile
-      const audioContext = new (window.AudioContext || (window as any).webkitAudioContext)();
+      // Create or reuse AudioContext - iOS requires webkit prefix
+      const AudioContextClass = window.AudioContext || (window as any).webkitAudioContext;
       
-      // Resume context if suspended (required on mobile)
+      if (!audioContextRef.current || audioContextRef.current.state === "closed") {
+        audioContextRef.current = new AudioContextClass({
+          // iOS needs specific sample rate
+          sampleRate: platform === "ios" ? 44100 : undefined,
+        });
+      }
+      
+      const audioContext = audioContextRef.current;
+      
+      // Store globally for reuse
+      globalAudioContext = audioContext;
+      
+      // Resume context if suspended (CRITICAL for mobile)
       if (audioContext.state === "suspended") {
         await audioContext.resume();
       }
       
-      // Create a pleasant confirmation sound
+      // iOS silent mode detection: play audio and check if it actually played
       const oscillator = audioContext.createOscillator();
       const gainNode = audioContext.createGain();
+      const analyser = audioContext.createAnalyser();
       
       oscillator.connect(gainNode);
-      gainNode.connect(audioContext.destination);
+      gainNode.connect(analyser);
+      analyser.connect(audioContext.destination);
       
-      oscillator.frequency.value = 523.25; // C5 note - pleasant confirmation sound
-      gainNode.gain.value = 0.5; // Audible volume
+      oscillator.frequency.value = 440; // A4 note - more universally supported
+      gainNode.gain.value = 0.5;
       
       oscillator.start();
       
-      // Fade out and stop after 300ms
-      gainNode.gain.exponentialRampToValueAtTime(0.01, audioContext.currentTime + 0.3);
-      oscillator.stop(audioContext.currentTime + 0.35);
+      // Wait a bit for audio to play
+      await new Promise(resolve => setTimeout(resolve, 100));
       
-      // Also initialize speech synthesis (unlocks on mobile)
-      const synth = window.speechSynthesis;
-      synth.cancel(); // Clear any pending
+      // Check if audio is actually playing (silent mode detection for iOS)
+      const dataArray = new Uint8Array(analyser.frequencyBinCount);
+      analyser.getByteFrequencyData(dataArray);
+      const hasAudio = dataArray.some(value => value > 0);
       
-      // Wait for voices to load
-      let voices = synth.getVoices();
-      if (voices.length === 0) {
-        await new Promise<void>((resolve) => {
-          const handler = () => {
-            synth.removeEventListener("voiceschanged", handler);
-            resolve();
-          };
-          synth.addEventListener("voiceschanged", handler);
-          setTimeout(resolve, 500); // Timeout fallback
-        });
-        voices = synth.getVoices();
+      // Fade out
+      gainNode.gain.exponentialRampToValueAtTime(0.01, audioContext.currentTime + 0.2);
+      oscillator.stop(audioContext.currentTime + 0.25);
+      
+      // Test speech synthesis separately (more reliable on mobile)
+      await testSpeechSynthesis();
+      
+      // If on iOS and no audio detected, might be silent mode
+      if (platform === "ios" && !hasAudio) {
+        setIsSilentMode(true);
       }
       
-      // Speak a brief audible test message
-      const testUtterance = new SpeechSynthesisUtterance("Audio ready");
-      testUtterance.volume = 0.7; // Audible
-      testUtterance.rate = 1.2; // Slightly faster
-      
-      // Try to find an English voice
-      const englishVoice = voices.find(v => v.lang.startsWith("en"));
-      if (englishVoice) {
-        testUtterance.voice = englishVoice;
-      }
-      
-      synth.speak(testUtterance);
-      
-      await new Promise(resolve => setTimeout(resolve, 500));
-      
-      await audioContext.close();
       setAudioStatus("granted");
     } catch (error) {
       console.error("Audio test error:", error);
-      // Even if it fails, mark as granted - we tried
-      setAudioStatus("granted");
+      // Try speech synthesis as fallback
+      try {
+        await testSpeechSynthesis();
+        setAudioStatus("granted");
+      } catch {
+        setAudioStatus("failed");
+      }
     } finally {
       setIsTestingAudio(false);
     }
+  };
+
+  const testSpeechSynthesis = async (): Promise<void> => {
+    return new Promise((resolve, reject) => {
+      const synth = window.speechSynthesis;
+      
+      if (!synth) {
+        reject(new Error("Speech synthesis not supported"));
+        return;
+      }
+      
+      synth.cancel(); // Clear any pending
+      
+      // Wait for voices to load
+      const loadVoices = (): SpeechSynthesisVoice[] => synth.getVoices();
+      let voices = loadVoices();
+      
+      const speakTest = () => {
+        voices = loadVoices();
+        
+        // Create test utterance
+        const testUtterance = new SpeechSynthesisUtterance("Ready");
+        testUtterance.volume = 0.7;
+        testUtterance.rate = 1.5; // Quick
+        testUtterance.pitch = 1.0;
+        
+        // Find appropriate voice
+        const englishVoice = voices.find(v => v.lang.startsWith("en")) || voices[0];
+        if (englishVoice) {
+          testUtterance.voice = englishVoice;
+        }
+        
+        testUtterance.onend = () => resolve();
+        testUtterance.onerror = (e) => {
+          console.warn("TTS test error:", e.error);
+          // Resolve anyway - we tried to unlock
+          resolve();
+        };
+        
+        synth.speak(testUtterance);
+        
+        // Android fix: resume if paused
+        setTimeout(() => {
+          if (synth.paused) synth.resume();
+        }, 100);
+        
+        // Fallback resolve after timeout
+        setTimeout(resolve, 2000);
+      };
+      
+      if (voices.length === 0) {
+        const onVoicesChanged = () => {
+          synth.removeEventListener("voiceschanged", onVoicesChanged);
+          speakTest();
+        };
+        synth.addEventListener("voiceschanged", onVoicesChanged);
+        // Fallback if voices never load
+        setTimeout(() => {
+          synth.removeEventListener("voiceschanged", onVoicesChanged);
+          speakTest();
+        }, 1000);
+      } else {
+        speakTest();
+      }
+    });
   };
 
   const handleContinue = () => {
@@ -150,6 +239,14 @@ export function AudioPermissionRequest({
         </DialogHeader>
         
         <div className="space-y-4 py-4">
+          {/* Platform-specific tips */}
+          {platform === "ios" && (
+            <div className="text-xs text-muted-foreground bg-muted/50 p-2 rounded-lg flex items-center gap-2">
+              <AlertTriangle className="h-4 w-4 flex-shrink-0" />
+              <span>Make sure your device is not in silent mode (check the side switch)</span>
+            </div>
+          )}
+          
           {/* Microphone Permission */}
           <div className="flex items-center justify-between p-3 rounded-lg border bg-muted/50">
             <div className="flex items-center gap-3">
@@ -187,6 +284,8 @@ export function AudioPermissionRequest({
             </div>
             {audioStatus === "granted" ? (
               <CheckCircle className="h-5 w-5 text-green-500" />
+            ) : audioStatus === "failed" ? (
+              <XCircle className="h-5 w-5 text-amber-500" />
             ) : audioStatus === "checking" ? (
               <Loader2 className="h-5 w-5 animate-spin text-muted-foreground" />
             ) : (
@@ -195,14 +294,28 @@ export function AudioPermissionRequest({
                 onClick={testAudioOutput}
                 disabled={isTestingAudio}
               >
-                {isTestingAudio ? "Testing..." : "Test"}
+                {isTestingAudio ? "Testing..." : "Test & Enable"}
               </Button>
             )}
           </div>
 
+          {/* Warnings */}
           {micStatus === "denied" && (
             <p className="text-sm text-destructive bg-destructive/10 p-3 rounded-lg">
               Microphone access was denied. Please enable it in your browser settings to use voice features.
+            </p>
+          )}
+          
+          {isSilentMode && (
+            <p className="text-sm text-amber-600 bg-amber-50 dark:bg-amber-950/30 p-3 rounded-lg flex items-center gap-2">
+              <AlertTriangle className="h-4 w-4" />
+              Your device may be in silent mode. Turn off the silent switch to hear audio.
+            </p>
+          )}
+          
+          {audioStatus === "failed" && (
+            <p className="text-sm text-amber-600 bg-amber-50 dark:bg-amber-950/30 p-3 rounded-lg">
+              Audio test had issues. Voice responses may not work correctly. Make sure your volume is up.
             </p>
           )}
         </div>

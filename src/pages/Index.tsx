@@ -197,6 +197,7 @@ const Index = () => {
   };
 
   // Force speak every reply - never skip, always in selected language
+  // Enhanced for iOS/Android compatibility
   const speak = (text: string) => {
     // Cancel any ongoing speech first
     synth.cancel();
@@ -221,6 +222,8 @@ const Index = () => {
       .replace(/\n+/g, ". ") // Convert newlines to pauses
       .replace(/\s+/g, " ") // Normalize whitespace
       .replace(/•/g, ",")   // Replace bullets with pauses
+      .replace(/[""]/g, '"') // Normalize quotes
+      .replace(/['']/g, "'") // Normalize apostrophes
       .trim();
     
     if (!cleanText) {
@@ -231,11 +234,50 @@ const Index = () => {
     console.log("Speaking text in language:", language, "Voice:", voiceForLang?.name || "default");
     setIsSpeaking(true);
     
-    // On mobile, we need to trigger speech from user interaction
-    // Use a workaround for Chrome/Safari mobile restrictions
+    // Detect platform for specific workarounds
+    const isIOS = /iPhone|iPad|iPod/i.test(navigator.userAgent);
+    const isAndroid = /Android/i.test(navigator.userAgent);
+    const isMobile = isIOS || isAndroid;
+    
     const startSpeaking = () => {
-      // Split into smaller chunks for more natural pacing
-      const chunks = cleanText.match(/[^.!?]+[.!?]+/g) || [cleanText];
+      // Split into smaller chunks for mobile reliability
+      // iOS cuts off after ~15 seconds, so keep chunks short
+      const maxChunkLength = isMobile ? 150 : 300;
+      const sentences = cleanText.match(/[^.!?]+[.!?]+/g) || [cleanText];
+      
+      // Combine short sentences, split long ones
+      const chunks: string[] = [];
+      let currentChunk = "";
+      
+      for (const sentence of sentences) {
+        const trimmed = sentence.trim();
+        if (!trimmed) continue;
+        
+        if (currentChunk.length + trimmed.length < maxChunkLength) {
+          currentChunk += (currentChunk ? " " : "") + trimmed;
+        } else {
+          if (currentChunk) chunks.push(currentChunk);
+          // If single sentence is too long, break it up
+          if (trimmed.length > maxChunkLength) {
+            const words = trimmed.split(/\s+/);
+            let subChunk = "";
+            for (const word of words) {
+              if (subChunk.length + word.length < maxChunkLength) {
+                subChunk += (subChunk ? " " : "") + word;
+              } else {
+                if (subChunk) chunks.push(subChunk);
+                subChunk = word;
+              }
+            }
+            if (subChunk) currentChunk = subChunk;
+          } else {
+            currentChunk = trimmed;
+          }
+        }
+      }
+      if (currentChunk) chunks.push(currentChunk);
+      
+      console.log(`Speaking ${chunks.length} chunks on ${isIOS ? "iOS" : isAndroid ? "Android" : "desktop"}`);
       
       const speakChunk = (index: number) => {
         if (index >= chunks.length) {
@@ -273,29 +315,67 @@ const Index = () => {
         // Force the language
         utter.lang = language;
         
-        // Optimized settings for natural Indian speech
-        utter.rate = 0.9;   // Slightly slower for clarity
-        utter.pitch = 1.0;  // Neutral pitch
-        utter.volume = 1.0; // Full volume
+        // Platform-specific settings
+        if (isIOS) {
+          // iOS works better with default rate
+          utter.rate = 1.0;
+          utter.pitch = 1.0;
+          utter.volume = 1.0;
+        } else if (isAndroid) {
+          // Android can handle slightly slower
+          utter.rate = 0.95;
+          utter.pitch = 1.0;
+          utter.volume = 1.0;
+        } else {
+          utter.rate = 0.9;
+          utter.pitch = 1.0;
+          utter.volume = 1.0;
+        }
         
         utter.onend = () => {
           console.log("Chunk", index + 1, "of", chunks.length, "completed");
-          // Small delay between chunks for natural pacing
-          setTimeout(() => speakChunk(index + 1), 100);
+          // Delay between chunks - longer on mobile for reliability
+          const delay = isMobile ? 200 : 100;
+          setTimeout(() => speakChunk(index + 1), delay);
         };
         
         utter.onerror = (e) => {
           console.error("TTS error on chunk", index, ":", e.error);
-          // Continue with next chunk even on error
-          setTimeout(() => speakChunk(index + 1), 100);
+          // On mobile, try to recover by resuming
+          if (isMobile) {
+            synth.cancel();
+            setTimeout(() => speakChunk(index + 1), 300);
+          } else {
+            setTimeout(() => speakChunk(index + 1), 100);
+          }
         };
         
-        // Chrome bug workaround - pause and resume to prevent cutting off
+        // Speak the utterance
         synth.speak(utter);
         
-        // Chrome mobile fix: resume if paused
-        if (synth.paused) {
-          synth.resume();
+        // Mobile workarounds
+        if (isMobile) {
+          // Chrome/Android bug: randomly pauses - keep resuming
+          const resumeInterval = setInterval(() => {
+            if (synth.paused) {
+              console.log("Resuming paused speech");
+              synth.resume();
+            }
+            // Clear once this chunk should be done
+          }, 250);
+          
+          utter.onend = () => {
+            clearInterval(resumeInterval);
+            console.log("Chunk", index + 1, "of", chunks.length, "completed");
+            setTimeout(() => speakChunk(index + 1), 200);
+          };
+          
+          utter.onerror = (e) => {
+            clearInterval(resumeInterval);
+            console.error("TTS error on chunk", index, ":", e.error);
+            synth.cancel();
+            setTimeout(() => speakChunk(index + 1), 300);
+          };
         }
       };
 
@@ -304,7 +384,8 @@ const Index = () => {
     };
 
     // Ensure voices are loaded before speaking
-    if (synth.getVoices().length === 0) {
+    const voices = synth.getVoices();
+    if (voices.length === 0) {
       // Wait for voices to load
       const handleVoicesChanged = () => {
         synth.removeEventListener("voiceschanged", handleVoicesChanged);
