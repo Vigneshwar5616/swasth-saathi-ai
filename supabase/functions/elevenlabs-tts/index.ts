@@ -7,27 +7,39 @@ const corsHeaders = {
     "authorization, x-client-info, apikey, content-type",
 };
 
-// Professional multilingual voices
+// Voice selection - using voices that work well with Indian languages
+// For authentic Indian accent, the multilingual model adapts based on text language
 const VOICE_MAP: Record<string, string> = {
-  // Indian English - professional female
-  "en": "EXAVITQu4vr4xnSDxMaL", // Sarah - clear, professional
-  "en-IN": "EXAVITQu4vr4xnSDxMaL",
+  // Indian English - use a clear, neutral voice that adapts well
+  "en": "pFZP5JQG7iQjIQuC4Bku", // Lily - warm, clear, adapts well to accents
+  "en-IN": "pFZP5JQG7iQjIQuC4Bku",
   
-  // Hindi - use multilingual voice
-  "hi": "EXAVITQu4vr4xnSDxMaL", // Sarah works well for Hindi with multilingual model
-  "hi-IN": "EXAVITQu4vr4xnSDxMaL",
+  // Hindi and other Indian languages - these work best with multilingual model
+  "hi": "pFZP5JQG7iQjIQuC4Bku", // Lily
+  "hi-IN": "pFZP5JQG7iQjIQuC4Bku",
   
-  // Other Indian languages - use multilingual capable voice
-  "te": "EXAVITQu4vr4xnSDxMaL", // Telugu
-  "ta": "EXAVITQu4vr4xnSDxMaL", // Tamil
-  "kn": "EXAVITQu4vr4xnSDxMaL", // Kannada
-  "ml": "EXAVITQu4vr4xnSDxMaL", // Malayalam
-  "mr": "EXAVITQu4vr4xnSDxMaL", // Marathi
-  "bn": "EXAVITQu4vr4xnSDxMaL", // Bengali
-  "gu": "EXAVITQu4vr4xnSDxMaL", // Gujarati
+  // South Indian languages
+  "te": "pFZP5JQG7iQjIQuC4Bku", // Telugu
+  "te-IN": "pFZP5JQG7iQjIQuC4Bku",
+  "ta": "pFZP5JQG7iQjIQuC4Bku", // Tamil
+  "ta-IN": "pFZP5JQG7iQjIQuC4Bku",
+  "kn": "pFZP5JQG7iQjIQuC4Bku", // Kannada
+  "kn-IN": "pFZP5JQG7iQjIQuC4Bku",
+  "ml": "pFZP5JQG7iQjIQuC4Bku", // Malayalam
+  "ml-IN": "pFZP5JQG7iQjIQuC4Bku",
+  
+  // Other Indian languages
+  "mr": "pFZP5JQG7iQjIQuC4Bku", // Marathi
+  "mr-IN": "pFZP5JQG7iQjIQuC4Bku",
+  "bn": "pFZP5JQG7iQjIQuC4Bku", // Bengali
+  "bn-IN": "pFZP5JQG7iQjIQuC4Bku",
+  "gu": "pFZP5JQG7iQjIQuC4Bku", // Gujarati
+  "gu-IN": "pFZP5JQG7iQjIQuC4Bku",
+  "pa": "pFZP5JQG7iQjIQuC4Bku", // Punjabi
+  "pa-IN": "pFZP5JQG7iQjIQuC4Bku",
 };
 
-const DEFAULT_VOICE = "EXAVITQu4vr4xnSDxMaL"; // Sarah
+const DEFAULT_VOICE = "pFZP5JQG7iQjIQuC4Bku"; // Lily
 
 serve(async (req) => {
   if (req.method === "OPTIONS") {
@@ -87,13 +99,13 @@ serve(async (req) => {
         },
         body: JSON.stringify({
           text: cleanText,
-          model_id: "eleven_multilingual_v2", // Supports 29 languages including Indian languages
+          model_id: "eleven_multilingual_v2", // Best for Indian languages - auto-adapts accent
           voice_settings: {
-            stability: 0.6,
-            similarity_boost: 0.8,
-            style: 0.4,
+            stability: 0.5,        // Lower = more expressive, natural variation
+            similarity_boost: 0.7, // Moderate to allow accent adaptation
+            style: 0.6,           // Higher style for more character
             use_speaker_boost: true,
-            speed: 1.0,
+            speed: 0.95,          // Slightly slower for clarity
           },
         }),
       }
