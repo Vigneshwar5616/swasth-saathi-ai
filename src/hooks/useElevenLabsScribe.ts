@@ -6,6 +6,7 @@ interface UseElevenLabsScribeOptions {
   onError: (error: string) => void;
   onStart?: () => void;
   onEnd?: () => void;
+  languageCode?: string; // Optional language hint for better recognition
 }
 
 /**
@@ -17,6 +18,7 @@ export function useElevenLabsScribe({
   onError,
   onStart,
   onEnd,
+  languageCode,
 }: UseElevenLabsScribeOptions) {
   const [isListening, setIsListening] = useState(false);
   const [isConnecting, setIsConnecting] = useState(false);
@@ -110,16 +112,26 @@ export function useElevenLabsScribe({
       ws.onopen = () => {
         console.log("ElevenLabs WebSocket connected");
         
+        // Build configuration with optional language hint
+        const config: Record<string, any> = {
+          type: "configure",
+          model_id: "scribe_v2_realtime",
+          sample_rate: 16000,
+          encoding: "pcm_s16le",
+          commit_strategy: "vad", // Voice Activity Detection
+        };
+        
+        // Add language hint if provided (helps with specific language recognition)
+        // Note: scribe_v2_realtime auto-detects but this can improve accuracy
+        if (languageCode) {
+          // Convert to ISO 639-1/3 format (e.g., "hi-IN" -> "hi" or "hi-IN" -> "hin")
+          const lang = languageCode.split("-")[0];
+          config.language_code = lang;
+          console.log("Setting language hint:", lang);
+        }
+        
         // Send initial configuration
-        ws.send(
-          JSON.stringify({
-            type: "configure",
-            model_id: "scribe_v2_realtime",
-            sample_rate: 16000,
-            encoding: "pcm_s16le",
-            commit_strategy: "vad", // Voice Activity Detection
-          })
-        );
+        ws.send(JSON.stringify(config));
 
         // Start audio processing
         startAudioProcessing(stream, ws);
