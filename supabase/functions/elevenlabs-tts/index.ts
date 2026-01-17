@@ -7,10 +7,8 @@ const corsHeaders = {
     "authorization, x-client-info, apikey, content-type",
 };
 
-// Voice ID - Replace with an Indian voice from ElevenLabs Voice Library
-// Go to: https://elevenlabs.io/voice-library and search "Indian" to find native Indian voices
-// Then replace this ID with your chosen voice
-const VOICE_ID = "EXAVITQu4vr4xnSDxMaL"; // Current: Sarah (placeholder until Indian voice is set)
+// Indian voice from ElevenLabs Voice Library
+const VOICE_ID = "Oq0cIHWGcnbOGozOQv0t";
 
 serve(async (req) => {
   if (req.method === "OPTIONS") {
@@ -49,8 +47,8 @@ serve(async (req) => {
       .trim()
       .substring(0, 5000);
 
-    // Add Indian accent instruction for multilingual model
-    const accentedText = `<speak with an Indian accent, like a professional Indian assistant> ${cleanText}`;
+    // Use clean text directly - the voice is already Indian
+    const finalText = cleanText;
 
     if (!cleanText) {
       return new Response(
@@ -68,14 +66,14 @@ serve(async (req) => {
           "Content-Type": "application/json",
         },
         body: JSON.stringify({
-          text: accentedText,
+          text: finalText,
           model_id: "eleven_multilingual_v2",
           voice_settings: {
-            stability: 0.6,         // Balanced for natural Indian speech rhythm
-            similarity_boost: 0.85, // Strong voice clarity
-            style: 0.3,             // Slight expressiveness for Indian intonation
+            stability: 0.65,        // Clear and consistent
+            similarity_boost: 0.8,  // Natural voice clarity
+            style: 0.2,             // Subtle expressiveness
             use_speaker_boost: true,
-            speed: 0.88,            // Slightly slower for clarity
+            speed: 0.85,            // Slower for clarity
           },
         }),
       }
