@@ -41,6 +41,23 @@ const VOICE_MAP: Record<string, string> = {
 
 const DEFAULT_VOICE = "pFZP5JQG7iQjIQuC4Bku"; // Lily
 
+// Get accent tag for native Indian pronunciation
+function getAccentTag(langCode: string): string {
+  const accentTags: Record<string, string> = {
+    "en": "[Indian English accent] ",
+    "hi": "[Hindi native speaker] ",
+    "te": "[Telugu native speaker] ",
+    "ta": "[Tamil native speaker] ",
+    "kn": "[Kannada native speaker] ",
+    "ml": "[Malayalam native speaker] ",
+    "mr": "[Marathi native speaker] ",
+    "bn": "[Bengali native speaker] ",
+    "gu": "[Gujarati native speaker] ",
+    "pa": "[Punjabi native speaker] ",
+  };
+  return accentTags[langCode] || "[Indian accent] ";
+}
+
 serve(async (req) => {
   if (req.method === "OPTIONS") {
     return new Response(null, { headers: corsHeaders });
@@ -72,15 +89,14 @@ serve(async (req) => {
     console.log(`TTS request: lang=${language}, voice=${voiceId}, text length=${text.length}`);
 
     // Clean text for better pronunciation
-    const cleanText = text
+    let cleanText = text
       .replace(/\*\*/g, "")
       .replace(/\*/g, "")
       .replace(/#{1,6}\s/g, "")
       .replace(/\n+/g, ". ")
       .replace(/\s+/g, " ")
       .replace(/•/g, ",")
-      .trim()
-      .substring(0, 5000); // ElevenLabs limit
+      .trim();
 
     if (!cleanText) {
       return new Response(
@@ -88,6 +104,16 @@ serve(async (req) => {
         { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } }
       );
     }
+
+    // Add Indian accent tag for native pronunciation (Eleven v3 feature)
+    // This forces the model to use authentic Indian delivery
+    const accentTag = getAccentTag(langBase);
+    const textWithAccent = accentTag + cleanText;
+    
+    // Limit to ElevenLabs max
+    const finalText = textWithAccent.substring(0, 5000);
+
+    console.log(`Using accent tag: "${accentTag}" for language: ${langBase}`);
 
     const response = await fetch(
       `https://api.elevenlabs.io/v1/text-to-speech/${voiceId}?output_format=mp3_44100_128`,
@@ -98,14 +124,14 @@ serve(async (req) => {
           "Content-Type": "application/json",
         },
         body: JSON.stringify({
-          text: cleanText,
-          model_id: "eleven_multilingual_v2", // Best for Indian languages - auto-adapts accent
+          text: finalText,
+          model_id: "eleven_multilingual_v2", // Best for Indian languages
           voice_settings: {
-            stability: 0.5,        // Lower = more expressive, natural variation
-            similarity_boost: 0.7, // Moderate to allow accent adaptation
-            style: 0.6,           // Higher style for more character
+            stability: 0.35,       // Lower = more natural, expressive Indian delivery
+            similarity_boost: 0.6, // Allow more accent adaptation
+            style: 0.8,           // High style for authentic character
             use_speaker_boost: true,
-            speed: 0.95,          // Slightly slower for clarity
+            speed: 0.92,          // Slightly slower for Indian speech patterns
           },
         }),
       }
