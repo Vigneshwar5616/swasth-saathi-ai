@@ -170,9 +170,8 @@ const Index = () => {
     };
   }, []);
 
-  // Professional ElevenLabs TTS - supports 29 languages including Indian languages
-  // Fixed for iOS: uses Blob URLs and persistent audio element
-  const speak = useCallback(async (text: string) => {
+  // Browser-based TTS using Web Speech API - free and works offline
+  const speak = useCallback((text: string) => {
     // Stop any currently playing audio
     if (persistentAudioRef.current) {
       persistentAudioRef.current.pause();
@@ -182,11 +181,6 @@ const Index = () => {
       currentAudioRef.current.pause();
       currentAudioRef.current = null;
     }
-    // Clean up previous blob URL
-    if (audioUrlRef.current) {
-      URL.revokeObjectURL(audioUrlRef.current);
-      audioUrlRef.current = null;
-    }
     setIsSpeaking(false);
 
     if (!text || !text.trim()) {
@@ -194,89 +188,57 @@ const Index = () => {
       return;
     }
 
+    const synth = window.speechSynthesis;
+    if (!synth || typeof synth.speak !== "function") {
+      toast({
+        title: "Audio Error",
+        description: "Your browser doesn't support text-to-speech.",
+        variant: "destructive",
+      });
+      return;
+    }
+
     console.log("[TTS] Speaking in language:", language);
     setIsSpeaking(true);
 
-    try {
-      const response = await fetch(
-        "https://tknpmvtfccepvwegcnfz.supabase.co/functions/v1/elevenlabs-tts",
-        {
-          method: "POST",
-          headers: {
-            "Content-Type": "application/json",
-            apikey: "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InRrbnBtdnRmY2NlcHZ3ZWdjbmZ6Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3NTYxMzA5NDksImV4cCI6MjA3MTcwNjk0OX0.ps5n1do5PBaUZu0VOk7ZX6bQ75rRA8UYlQnVXJsUC2g",
-            Authorization: "Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InRrbnBtdnRmY2NlcHZ3ZWdjbmZ6Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3NTYxMzA5NDksImV4cCI6MjA3MTcwNjk0OX0.ps5n1do5PBaUZu0VOk7ZX6bQ75rRA8UYlQnVXJsUC2g",
-          },
-          body: JSON.stringify({ text, language }),
-        }
-      );
+    // Cancel any pending utterances
+    synth.cancel();
 
-      if (!response.ok) {
-        const err = await response.json().catch(() => ({}));
-        throw new Error(err.error || `TTS failed: ${response.status}`);
-      }
+    const utterance = new SpeechSynthesisUtterance(text);
+    utterance.lang = language;
+    utterance.rate = 0.9;
+    utterance.pitch = 1.0;
+    utterance.volume = 1.0;
 
-      const data = await response.json();
-      
-      if (!data.audio) {
-        throw new Error("No audio data received");
-      }
-
-      // Convert base64 to Blob URL (more reliable on iOS than data URIs)
-      const audioBlob = base64ToBlob(data.audio, "audio/mpeg");
-      const blobUrl = URL.createObjectURL(audioBlob);
-      audioUrlRef.current = blobUrl;
-
-      // Use persistent audio element for iOS compatibility
-      const audio = persistentAudioRef.current || new Audio();
-      audio.src = blobUrl;
-      currentAudioRef.current = audio;
-
-      // Set up event handlers
-      const handleEnded = () => {
-        console.log("[TTS] Finished speaking");
-        setIsSpeaking(false);
-        currentAudioRef.current = null;
-        audio.removeEventListener("ended", handleEnded);
-        audio.removeEventListener("error", handleError);
-      };
-
-      const handleError = (e: Event) => {
-        console.error("[TTS] Audio playback error:", e);
-        setIsSpeaking(false);
-        currentAudioRef.current = null;
-        audio.removeEventListener("ended", handleEnded);
-        audio.removeEventListener("error", handleError);
-        
-        // iOS fallback: try browser TTS
-        fallbackToSpeechSynthesis(text);
-      };
-
-      audio.addEventListener("ended", handleEnded);
-      audio.addEventListener("error", handleError);
-
-      // iOS requires load() before play() for dynamically set sources
-      audio.load();
-      
-      // Small delay for iOS to process the load
-      await new Promise(resolve => setTimeout(resolve, 50));
-      
-      // Play with iOS-specific handling
-      const playPromise = audio.play();
-      
-      if (playPromise !== undefined) {
-        playPromise.catch((error) => {
-          console.error("[TTS] Play failed:", error);
-          // If autoplay blocked, try speech synthesis as fallback
-          fallbackToSpeechSynthesis(text);
-        });
-      }
-    } catch (error) {
-      console.error("[TTS] Error:", error);
-      setIsSpeaking(false);
-      fallbackToSpeechSynthesis(text);
+    // Try to find a voice that matches the language
+    const voices = synth.getVoices();
+    const matchingVoice = voices.find(v => v.lang.startsWith(language.split('-')[0]));
+    if (matchingVoice) {
+      utterance.voice = matchingVoice;
     }
-  }, [language, base64ToBlob]);
+
+    utterance.onend = () => {
+      console.log("[TTS] Finished speaking");
+      setIsSpeaking(false);
+    };
+
+    utterance.onerror = (e) => {
+      console.error("[TTS] Speech synthesis error:", e);
+      setIsSpeaking(false);
+      toast({
+        title: "Audio Error",
+        description: "Could not play voice response. Please read the text.",
+        variant: "destructive",
+      });
+    };
+
+    synth.speak(utterance);
+
+    // iOS speech synthesis fix: resume if paused
+    setTimeout(() => {
+      if (synth.paused) synth.resume();
+    }, 100);
+  }, [language, toast]);
 
   // Fallback to browser TTS for iOS or when ElevenLabs fails
   const fallbackToSpeechSynthesis = useCallback((text: string) => {
