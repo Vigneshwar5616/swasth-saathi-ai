@@ -14,7 +14,7 @@ import LanguageSelector from "@/components/chat/LanguageSelector";
 import { AudioPermissionRequest } from "@/components/chat/AudioPermissionRequest";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/contexts/AuthContext";
-import { useElevenLabsScribe } from "@/hooks/useElevenLabsScribe";
+import { useBrowserSpeechRecognition } from "@/hooks/useBrowserSpeechRecognition";
 
 interface Message { role: "user" | "assistant"; content: string }
 
@@ -36,12 +36,12 @@ const Index = () => {
   const { toast } = useToast();
   const currentAudioRef = useRef<HTMLAudioElement | null>(null);
 
-  // ElevenLabs Speech-to-Text hook for reliable multi-language transcription
+  // Browser Speech-to-Text (Web Speech API)
   const handleTranscript = useCallback((text: string, isFinal: boolean) => {
     setInput(text);
   }, []);
 
-  const handleScribeError = useCallback((error: string) => {
+  const handleSpeechError = useCallback((error: string) => {
     toast({
       title: "Voice Error",
       description: error,
@@ -49,43 +49,63 @@ const Index = () => {
     });
   }, [toast]);
 
-  const handleScribeStart = useCallback(() => {
+  const handleSpeechStart = useCallback(() => {
     const langName = language.split("-")[0].toUpperCase();
     toast({ title: "Listening...", description: `Speak now in ${langName}!` });
   }, [language, toast]);
 
   const {
+    isSupported: isSpeechSupported,
     isListening,
     isConnecting,
-    start: startScribe,
-    stop: stopScribe,
-  } = useElevenLabsScribe({
+    start: startSpeech,
+    stop: stopSpeech,
+  } = useBrowserSpeechRecognition({
     onTranscript: handleTranscript,
-    onError: handleScribeError,
-    onStart: handleScribeStart,
-    languageCode: language, // Pass selected language for better recognition
+    onError: handleSpeechError,
+    onStart: handleSpeechStart,
+    languageCode: language,
   });
 
   // Handle mic button click - show permission dialog first if not granted
   const handleMic = useCallback(() => {
+    if (!isSpeechSupported) {
+      toast({
+        title: "Voice Input Unavailable",
+        description: "Your browser doesn't support voice input on this device.",
+        variant: "destructive",
+      });
+      return;
+    }
+
     if (isListening || isConnecting) {
-      stopScribe();
+      stopSpeech();
     } else {
       // Show permission dialog if permissions not yet granted
       if (!audioPermissionsGranted) {
         setShowAudioPermissionDialog(true);
       } else {
-        startScribe();
+        startSpeech();
       }
     }
-  }, [isListening, isConnecting, startScribe, stopScribe, audioPermissionsGranted]);
+  }, [
+    isSpeechSupported,
+    isListening,
+    isConnecting,
+    startSpeech,
+    stopSpeech,
+    audioPermissionsGranted,
+    toast,
+  ]);
 
   // Handle permissions granted - start listening automatically
   const handlePermissionsGranted = useCallback(() => {
     setAudioPermissionsGranted(true);
-    // Automatically start listening after permissions granted
-    startScribe();
-  }, [startScribe]);
+    if (isSpeechSupported) {
+      // Automatically start listening after permissions granted
+      startSpeech();
+    }
+  }, [isSpeechSupported, startSpeech]);
 
   // Load user settings
   useEffect(() => {
@@ -133,17 +153,6 @@ const Index = () => {
       }
     }
   };
-
-  // Helper to convert base64 to Blob (more reliable on iOS than data URIs)
-  const base64ToBlob = useCallback((base64: string, mimeType: string): Blob => {
-    const byteCharacters = atob(base64);
-    const byteNumbers = new Array(byteCharacters.length);
-    for (let i = 0; i < byteCharacters.length; i++) {
-      byteNumbers[i] = byteCharacters.charCodeAt(i);
-    }
-    const byteArray = new Uint8Array(byteNumbers);
-    return new Blob([byteArray], { type: mimeType });
-  }, []);
 
   // Persistent audio element ref for iOS compatibility
   const persistentAudioRef = useRef<HTMLAudioElement | null>(null);
