@@ -3,7 +3,7 @@ import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
 import { useToast } from "@/hooks/use-toast";
-import { Mic, Send, Loader2, ArrowDown, Volume2 } from "lucide-react";
+import { Mic, Send, Loader2, ArrowDown, Volume2, VolumeX } from "lucide-react";
 import { ChatMessage } from "@/components/chat/ChatMessage";
 import { AppSidebar } from "@/components/layout/AppSidebar";
 import { SidebarTrigger } from "@/components/ui/sidebar";
@@ -15,6 +15,7 @@ import { AudioPermissionRequest } from "@/components/chat/AudioPermissionRequest
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/contexts/AuthContext";
 import { useBrowserSpeechRecognition } from "@/hooks/useBrowserSpeechRecognition";
+import { useSpeechSynthesis } from "@/hooks/useSpeechSynthesis";
 
 interface Message { role: "user" | "assistant"; content: string }
 
@@ -24,7 +25,6 @@ const Index = () => {
   const [messages, setMessages] = useState<Message[]>([]);
   const [input, setInput] = useState("");
   const [loading, setLoading] = useState(false);
-  const [isSpeaking, setIsSpeaking] = useState(false);
   const [showScrollButton, setShowScrollButton] = useState(false);
   const [showAudioPermissionDialog, setShowAudioPermissionDialog] = useState(false);
   const [audioPermissionsGranted, setAudioPermissionsGranted] = useState(false);
@@ -34,7 +34,26 @@ const Index = () => {
   const chatContainerRef = useRef<HTMLDivElement>(null);
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const { toast } = useToast();
-  const currentAudioRef = useRef<HTMLAudioElement | null>(null);
+
+  // Text-to-Speech hook
+  const handleTTSError = useCallback((error: string) => {
+    toast({
+      title: "Audio Error",
+      description: error,
+      variant: "destructive",
+    });
+  }, [toast]);
+
+  const {
+    speak,
+    stop: stopSpeaking,
+    isSpeaking,
+    isSupported: isTTSSupported,
+  } = useSpeechSynthesis({
+    defaultLanguage: language,
+    rate: 0.9,
+    onError: handleTTSError,
+  });
 
   // Browser Speech-to-Text (Web Speech API)
   const handleTranscript = useCallback((text: string, isFinal: boolean) => {
@@ -50,9 +69,13 @@ const Index = () => {
   }, [toast]);
 
   const handleSpeechStart = useCallback(() => {
+    // Stop TTS if it's speaking when user starts talking
+    if (isSpeaking) {
+      stopSpeaking();
+    }
     const langName = language.split("-")[0].toUpperCase();
     toast({ title: "Listening...", description: `Speak now in ${langName}!` });
-  }, [language, toast]);
+  }, [language, toast, isSpeaking, stopSpeaking]);
 
   const {
     isSupported: isSpeechSupported,
@@ -154,137 +177,12 @@ const Index = () => {
     }
   };
 
-  // Persistent audio element ref for iOS compatibility
-  const persistentAudioRef = useRef<HTMLAudioElement | null>(null);
-  const audioUrlRef = useRef<string | null>(null);
-
-  // Initialize persistent audio element on mount (helps iOS)
-  useEffect(() => {
-    // Create a persistent audio element that iOS can reuse
-    persistentAudioRef.current = new Audio();
-    persistentAudioRef.current.preload = "auto";
-    
-    // iOS requires setting these attributes
-    persistentAudioRef.current.setAttribute("playsinline", "true");
-    persistentAudioRef.current.setAttribute("webkit-playsinline", "true");
-    
-    return () => {
-      if (audioUrlRef.current) {
-        URL.revokeObjectURL(audioUrlRef.current);
-      }
-      if (persistentAudioRef.current) {
-        persistentAudioRef.current.pause();
-        persistentAudioRef.current = null;
-      }
-    };
-  }, []);
-
-  // Browser-based TTS using Web Speech API - free and works offline
-  const speak = useCallback((text: string) => {
-    // Stop any currently playing audio
-    if (persistentAudioRef.current) {
-      persistentAudioRef.current.pause();
-      persistentAudioRef.current.currentTime = 0;
+  // Speak function wrapper that uses the hook's speak with current language
+  const speakResponse = useCallback((text: string) => {
+    if (text && text.trim() && text.length > 20) {
+      speak(text, language);
     }
-    if (currentAudioRef.current) {
-      currentAudioRef.current.pause();
-      currentAudioRef.current = null;
-    }
-    setIsSpeaking(false);
-
-    if (!text || !text.trim()) {
-      console.log("No text to speak");
-      return;
-    }
-
-    const synth = window.speechSynthesis;
-    if (!synth || typeof synth.speak !== "function") {
-      toast({
-        title: "Audio Error",
-        description: "Your browser doesn't support text-to-speech.",
-        variant: "destructive",
-      });
-      return;
-    }
-
-    console.log("[TTS] Speaking in language:", language);
-    setIsSpeaking(true);
-
-    // Cancel any pending utterances
-    synth.cancel();
-
-    const utterance = new SpeechSynthesisUtterance(text);
-    utterance.lang = language;
-    utterance.rate = 0.9;
-    utterance.pitch = 1.0;
-    utterance.volume = 1.0;
-
-    // Try to find a voice that matches the language
-    const voices = synth.getVoices();
-    const matchingVoice = voices.find(v => v.lang.startsWith(language.split('-')[0]));
-    if (matchingVoice) {
-      utterance.voice = matchingVoice;
-    }
-
-    utterance.onend = () => {
-      console.log("[TTS] Finished speaking");
-      setIsSpeaking(false);
-    };
-
-    utterance.onerror = (e) => {
-      console.error("[TTS] Speech synthesis error:", e);
-      setIsSpeaking(false);
-      toast({
-        title: "Audio Error",
-        description: "Could not play voice response. Please read the text.",
-        variant: "destructive",
-      });
-    };
-
-    synth.speak(utterance);
-
-    // iOS speech synthesis fix: resume if paused
-    setTimeout(() => {
-      if (synth.paused) synth.resume();
-    }, 100);
-  }, [language, toast]);
-
-  // Fallback to browser TTS for iOS or when ElevenLabs fails
-  const fallbackToSpeechSynthesis = useCallback((text: string) => {
-    const synth = window.speechSynthesis;
-    if (synth && typeof synth.speak === "function") {
-      console.log("[TTS] Falling back to browser TTS");
-      synth.cancel(); // Clear any pending utterances
-      
-      const utterance = new SpeechSynthesisUtterance(text);
-      utterance.lang = language;
-      utterance.rate = 0.9;
-      utterance.volume = 1.0;
-      
-      utterance.onend = () => setIsSpeaking(false);
-      utterance.onerror = () => {
-        setIsSpeaking(false);
-        toast({
-          title: "Audio Error",
-          description: "Could not play voice response. Please read the text.",
-          variant: "destructive",
-        });
-      };
-      
-      // iOS speech synthesis fix: resume if paused
-      synth.speak(utterance);
-      setTimeout(() => {
-        if (synth.paused) synth.resume();
-      }, 100);
-    } else {
-      setIsSpeaking(false);
-      toast({
-        title: "Audio Error",
-        description: "Could not play voice response. Please read the text.",
-        variant: "destructive",
-      });
-    }
-  }, [language, toast]);
+  }, [speak, language]);
 
 
   // Helper to get auth headers
@@ -468,7 +366,7 @@ const Index = () => {
       
       // Speak immediately when we have content
       if (assistantContent && assistantContent !== "..." && assistantContent.length > 20) {
-        speak(assistantContent);
+        speakResponse(assistantContent);
       }
       
       // Save conversation to database (only for logged in users)
@@ -559,7 +457,7 @@ Please explain compassionately and remove any stigma around mental health.`
       const data = await resp.json();
       const assistantContent = data?.choices?.[0]?.message?.content || "I'm sorry, I couldn't get information right now.";
       setMessages(curr => [...curr, { role: "assistant", content: assistantContent }]);
-      speak(assistantContent);
+      speakResponse(assistantContent);
       
       if (user && assistantContent) {
         await supabase.from("user_conversations").insert({
@@ -707,10 +605,15 @@ Please explain compassionately and remove any stigma around mental health.`
                   <div className="flex flex-wrap items-center gap-4">
                     <LanguageSelector value={language} onChange={setLanguage} />
                     {isSpeaking && (
-                      <div className="flex items-center gap-2 text-primary animate-pulse">
-                        <Volume2 className="h-4 w-4" />
-                        <span className="text-sm font-medium">Speaking...</span>
-                      </div>
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        onClick={stopSpeaking}
+                        className="flex items-center gap-2 text-primary hover:text-destructive animate-pulse"
+                      >
+                        <VolumeX className="h-4 w-4" />
+                        <span className="text-sm font-medium">Stop Speaking</span>
+                      </Button>
                     )}
                   </div>
 
