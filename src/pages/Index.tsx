@@ -35,7 +35,7 @@ const Index = () => {
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const { toast } = useToast();
 
-  // Text-to-Speech hook
+  // Text-to-Speech hook with enhanced Indian language support
   const handleTTSError = useCallback((error: string) => {
     toast({
       title: "Audio Error",
@@ -44,15 +44,23 @@ const Index = () => {
     });
   }, [toast]);
 
+  const handleTTSFallback = useCallback((fromLang: string, toLang: string) => {
+    toast({
+      title: "Voice Fallback",
+      description: `${fromLang} voice not available. Using ${toLang} instead.`,
+    });
+  }, [toast]);
+
   const {
     speak,
     stop: stopSpeaking,
     isSpeaking,
     isSupported: isTTSSupported,
+    availableLanguages,
   } = useSpeechSynthesis({
     defaultLanguage: language,
-    rate: 0.9,
     onError: handleTTSError,
+    onFallback: handleTTSFallback,
   });
 
   // Browser Speech-to-Text (Web Speech API)
