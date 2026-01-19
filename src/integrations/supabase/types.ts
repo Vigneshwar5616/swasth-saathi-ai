@@ -54,8 +54,6 @@ export type Database = {
           id: string
           language: string | null
           updated_at: string
-          user_agent: string | null
-          user_ip: string | null
           user_message: string
         }
         Insert: {
@@ -64,8 +62,6 @@ export type Database = {
           id?: string
           language?: string | null
           updated_at?: string
-          user_agent?: string | null
-          user_ip?: string | null
           user_message: string
         }
         Update: {
@@ -74,8 +70,6 @@ export type Database = {
           id?: string
           language?: string | null
           updated_at?: string
-          user_agent?: string | null
-          user_ip?: string | null
           user_message?: string
         }
         Relationships: []
@@ -236,16 +230,25 @@ export type Database = {
         }
         Returns: boolean
       }
-      insert_chat_conversation: {
-        Args: {
-          p_assistant_message: string
-          p_language?: string
-          p_user_agent?: string
-          p_user_ip?: string
-          p_user_message: string
-        }
-        Returns: string
-      }
+      insert_chat_conversation:
+        | {
+            Args: {
+              p_assistant_message: string
+              p_language?: string
+              p_user_message: string
+            }
+            Returns: string
+          }
+        | {
+            Args: {
+              p_assistant_message: string
+              p_language?: string
+              p_user_agent?: string
+              p_user_ip?: string
+              p_user_message: string
+            }
+            Returns: string
+          }
       purge_old_chat_conversations: {
         Args: { retention_days?: number }
         Returns: number
