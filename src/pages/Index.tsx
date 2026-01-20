@@ -76,14 +76,32 @@ const Index = () => {
     });
   }, [toast]);
 
+  // Map language codes to display names
+  const getLanguageDisplayName = useCallback((langCode: string): string => {
+    const languageNames: Record<string, string> = {
+      "en-IN": "English",
+      "hi-IN": "हिंदी (Hindi)",
+      "te-IN": "తెలుగు (Telugu)",
+      "ta-IN": "தமிழ் (Tamil)",
+      "kn-IN": "ಕನ್ನಡ (Kannada)",
+      "ml-IN": "മലയാളം (Malayalam)",
+      "mr-IN": "मराठी (Marathi)",
+      "bn-IN": "বাংলা (Bengali)",
+      "gu-IN": "ગુજરાતી (Gujarati)",
+      "pa-IN": "ਪੰਜਾਬੀ (Punjabi)",
+      "or-IN": "ଓଡ଼ିଆ (Odia)",
+    };
+    return languageNames[langCode] || langCode.split("-")[0].toUpperCase();
+  }, []);
+
   const handleSpeechStart = useCallback(() => {
     // Stop TTS if it's speaking when user starts talking
     if (isSpeaking) {
       stopSpeaking();
     }
-    const langName = language.split("-")[0].toUpperCase();
-    toast({ title: "Listening...", description: `Speak now in ${langName}!` });
-  }, [language, toast, isSpeaking, stopSpeaking]);
+    const langDisplayName = getLanguageDisplayName(language);
+    toast({ title: "Listening...", description: `Speak now in ${langDisplayName}` });
+  }, [language, toast, isSpeaking, stopSpeaking, getLanguageDisplayName]);
 
   const {
     isSupported: isSpeechSupported,
