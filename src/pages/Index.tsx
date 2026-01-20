@@ -16,6 +16,7 @@ import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/contexts/AuthContext";
 import { useBrowserSpeechRecognition } from "@/hooks/useBrowserSpeechRecognition";
 import { useSpeechSynthesis } from "@/hooks/useSpeechSynthesis";
+import { useElevenLabsTTS } from "@/hooks/useElevenLabsTTS";
 
 interface Message { role: "user" | "assistant"; content: string }
 
@@ -35,7 +36,21 @@ const Index = () => {
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const { toast } = useToast();
 
-  // Text-to-Speech hook with enhanced Indian language support
+  // ElevenLabs TTS (primary - high quality multilingual)
+  const handleElevenLabsError = useCallback((error: string) => {
+    console.warn("[ElevenLabs TTS] Error, will fallback to browser TTS:", error);
+  }, []);
+
+  const {
+    speak: elevenLabsSpeak,
+    stop: elevenLabsStop,
+    isSpeaking: isElevenLabsSpeaking,
+    isLoading: isElevenLabsLoading,
+  } = useElevenLabsTTS({
+    onError: handleElevenLabsError,
+  });
+
+  // Browser TTS (fallback)
   const handleTTSError = useCallback((error: string) => {
     toast({
       title: "Audio Error",
@@ -45,16 +60,13 @@ const Index = () => {
   }, [toast]);
 
   const handleTTSFallback = useCallback((fromLang: string, toLang: string) => {
-    // Some devices/browsers simply don't have TTS voices installed for certain
-    // Indian languages. We still speak using the closest available voice.
-    // To avoid confusing users with repeated warnings, we suppress this toast.
     console.warn("[TTS] Voice fallback:", { fromLang, toLang });
   }, []);
 
   const {
-    speak,
-    stop: stopSpeaking,
-    isSpeaking,
+    speak: browserSpeak,
+    stop: browserStopSpeaking,
+    isSpeaking: isBrowserSpeaking,
     isSupported: isTTSSupported,
     availableLanguages,
   } = useSpeechSynthesis({
@@ -62,6 +74,27 @@ const Index = () => {
     onError: handleTTSError,
     onFallback: handleTTSFallback,
   });
+
+  // Combined TTS state
+  const isSpeaking = isElevenLabsSpeaking || isBrowserSpeaking || isElevenLabsLoading;
+  
+  // Stop all TTS
+  const stopSpeaking = useCallback(() => {
+    elevenLabsStop();
+    browserStopSpeaking();
+  }, [elevenLabsStop, browserStopSpeaking]);
+
+  // Smart speak function - tries ElevenLabs first, falls back to browser TTS
+  const speak = useCallback(async (text: string, lang: string) => {
+    try {
+      // Try ElevenLabs first (high-quality multilingual)
+      await elevenLabsSpeak(text, lang);
+    } catch (error) {
+      console.warn("[TTS] ElevenLabs failed, falling back to browser TTS:", error);
+      // Fallback to browser TTS
+      browserSpeak(text, lang);
+    }
+  }, [elevenLabsSpeak, browserSpeak]);
 
   // Browser Speech-to-Text (Web Speech API)
   // Track if current input came from speech for better handling
@@ -223,7 +256,7 @@ const Index = () => {
     }
   };
 
-  // Speak function wrapper that uses the hook's speak with current language
+  // Speak function wrapper that uses ElevenLabs with browser fallback
   const speakResponse = useCallback((text: string) => {
     if (text && text.trim() && text.length > 20) {
       speak(text, language);
@@ -650,15 +683,24 @@ Please explain compassionately and remove any stigma around mental health.`
                 <div className="space-y-4">
                   <div className="flex flex-wrap items-center gap-4">
                     <LanguageSelector value={language} onChange={setLanguage} />
-                    {isSpeaking && (
+                    {(isSpeaking || isElevenLabsLoading) && (
                       <Button
                         variant="ghost"
                         size="sm"
                         onClick={stopSpeaking}
                         className="flex items-center gap-2 text-primary hover:text-destructive animate-pulse"
                       >
-                        <VolumeX className="h-4 w-4" />
-                        <span className="text-sm font-medium">Stop Speaking</span>
+                        {isElevenLabsLoading ? (
+                          <>
+                            <Loader2 className="h-4 w-4 animate-spin" />
+                            <span className="text-sm font-medium">Generating Audio...</span>
+                          </>
+                        ) : (
+                          <>
+                            <VolumeX className="h-4 w-4" />
+                            <span className="text-sm font-medium">Stop Speaking</span>
+                          </>
+                        )}
                       </Button>
                     )}
                   </div>
