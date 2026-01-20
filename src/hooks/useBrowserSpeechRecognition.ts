@@ -81,6 +81,14 @@ export function useBrowserSpeechRecognition({
     }
   }, []);
 
+  // Use ref to track listening state for callbacks to avoid stale closures
+  const isListeningRef = useRef(false);
+  
+  // Keep ref in sync with state
+  useEffect(() => {
+    isListeningRef.current = isListening;
+  }, [isListening]);
+
   // Reset no-speech timeout (called when speech is detected)
   const resetNoSpeechTimeout = useCallback(() => {
     if (noSpeechTimeoutRef.current) {
@@ -88,13 +96,13 @@ export function useBrowserSpeechRecognition({
     }
     // Set a 15-second timeout for no speech - auto stop to save resources
     noSpeechTimeoutRef.current = setTimeout(() => {
-      if (recognitionRef.current && isListening) {
+      if (recognitionRef.current && isListeningRef.current) {
         console.log("[SpeechRecognition] No speech for 15s, stopping");
         shouldRestartRef.current = false;
         recognitionRef.current.stop();
       }
     }, 15000);
-  }, [isListening]);
+  }, []);
 
   const ensureRecognition = useCallback(() => {
     if (!RecognitionCtor) return null;
