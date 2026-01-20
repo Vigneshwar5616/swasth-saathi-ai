@@ -183,7 +183,22 @@ export function useBrowserSpeechRecognition({
       }
 
       const finalText = finalParts.join(" ").replace(/\s+/g, " ").trim();
-      const display = [finalText, interimText]
+      
+      // Accumulate final text into our running transcript
+      if (finalText && finalText !== finalTranscriptRef.current) {
+        // Append new final text to accumulated transcript
+        const newPart = finalText.slice(finalTranscriptRef.current.length).trim();
+        if (newPart) {
+          finalTranscriptRef.current = finalTranscriptRef.current 
+            ? `${finalTranscriptRef.current} ${newPart}`.replace(/\s+/g, " ").trim()
+            : newPart;
+        } else {
+          finalTranscriptRef.current = finalText;
+        }
+      }
+      
+      // Display is accumulated final + current interim
+      const display = [finalTranscriptRef.current, interimText]
         .filter(Boolean)
         .join(" ")
         .replace(/\s+/g, " ")
@@ -196,26 +211,14 @@ export function useBrowserSpeechRecognition({
         (recognitionRef.current as any)._lastEmittedTranscript = display;
       }
 
-      // If we have a final transcript and no interim, treat as final.
-      // This prevents repeated/duplicated text on Android and iOS.
-      if (finalText && !interimText) {
-        finalTranscriptRef.current = finalText;
-        onTranscriptRef.current(finalText, true);
-
-        // Stop after final to keep chat input clean (user can tap mic again).
-        shouldRestartRef.current = false;
-        try {
-          recognitionRef.current?.stop();
-        } catch {
-          // ignore
-        }
-        return;
-      }
-
+      // Emit the transcript - mark as final only when we have finalized text and no interim
+      const isFinalEmit = !!finalText && !interimText;
       if (display) {
-        finalTranscriptRef.current = finalText;
-        onTranscriptRef.current(display, false);
+        onTranscriptRef.current(display, isFinalEmit);
       }
+      
+      // DON'T auto-stop - let user speak continuously until they tap the button
+      // The no-speech timeout will handle stopping after 30s of silence
     };
 
     (recognition as any).onspeechstart = () => {
