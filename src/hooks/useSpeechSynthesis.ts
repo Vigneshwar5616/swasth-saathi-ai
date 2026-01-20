@@ -123,12 +123,25 @@ export function useSpeechSynthesis({
     onFallbackRef.current = onFallback;
   }, [onStart, onEnd, onError, onFallback]);
 
-  // Load voices and determine available languages
+  // Load voices with retry logic for better reliability
   useEffect(() => {
     if (!synth) return;
 
+    let retryCount = 0;
+    const maxRetries = 5;
+    let retryTimeout: NodeJS.Timeout | null = null;
+
     const loadVoices = () => {
       const availableVoices = synth.getVoices();
+      
+      if (availableVoices.length === 0 && retryCount < maxRetries) {
+        // Voices not loaded yet, retry
+        retryCount++;
+        console.log(`[TTS] Voices not ready, retrying (${retryCount}/${maxRetries})...`);
+        retryTimeout = setTimeout(loadVoices, 200 * retryCount);
+        return;
+      }
+      
       if (availableVoices.length > 0) {
         setVoices(availableVoices);
         
@@ -145,6 +158,8 @@ export function useSpeechSynthesis({
         );
         if (indianVoices.length > 0) {
           console.log("[TTS] Indian language voices:", indianVoices.map(v => `${v.name} (${v.lang})`));
+        } else {
+          console.log("[TTS] No Indian language voices found. Available:", availableVoices.slice(0, 10).map(v => v.lang));
         }
       }
     };
@@ -157,6 +172,7 @@ export function useSpeechSynthesis({
 
     return () => {
       synth.removeEventListener("voiceschanged", loadVoices);
+      if (retryTimeout) clearTimeout(retryTimeout);
     };
   }, [synth]);
 
@@ -360,6 +376,15 @@ export function useSpeechSynthesis({
       return;
     }
 
+    // Refresh voices in case they weren't loaded yet
+    let currentVoices = voices;
+    if (voices.length === 0) {
+      currentVoices = synth.getVoices();
+      if (currentVoices.length > 0) {
+        setVoices(currentVoices);
+      }
+    }
+
     // Find the best voice
     const { voice, actualLang, isSameFamily } = findVoice(targetLang);
     
@@ -374,9 +399,9 @@ export function useSpeechSynthesis({
     // Get language-specific settings
     const langSettings = getLanguageSettings(actualLang);
 
-    // Create utterance
+    // Create utterance - always set the language even if no specific voice found
     const utterance = new SpeechSynthesisUtterance(cleanText);
-    utterance.lang = actualLang;
+    utterance.lang = voice?.lang || targetLang; // Use voice lang or requested lang
     utterance.rate = langSettings.rate;
     utterance.pitch = langSettings.pitch;
     utterance.volume = volume;
@@ -389,6 +414,9 @@ export function useSpeechSynthesis({
         rate: langSettings.rate,
         textLength: cleanText.length,
       });
+    } else {
+      // No specific voice found, but browser might still speak in the requested language
+      console.log(`[TTS] No voice found, attempting with lang: ${targetLang}`);
     }
 
     utterance.onstart = () => {
@@ -446,7 +474,7 @@ export function useSpeechSynthesis({
         synth.resume();
       }
     }, 100);
-  }, [synth, defaultLanguage, volume, findVoice, getLanguageSettings, cleanTextForLanguage, isPaused]);
+  }, [synth, defaultLanguage, volume, voices, findVoice, getLanguageSettings, cleanTextForLanguage, isPaused]);
 
   const stop = useCallback(() => {
     if (synth) {
