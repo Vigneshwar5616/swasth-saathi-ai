@@ -47,19 +47,37 @@ const LANGUAGE_SETTINGS: Record<string, { rate: number; pitch: number; name: str
 };
 
 // Fallback chain for languages - try related languages when native not available
+// Each entry lists fallbacks in priority order
 const LANGUAGE_FALLBACKS: Record<string, string[]> = {
-  "hi-IN": ["hi", "en-IN", "en"],
-  "bn-IN": ["bn", "hi-IN", "en-IN", "en"],
-  "te-IN": ["te", "hi-IN", "en-IN", "en"],
-  "mr-IN": ["mr", "hi-IN", "en-IN", "en"],
-  "ta-IN": ["ta", "hi-IN", "en-IN", "en"],
-  "gu-IN": ["gu", "hi-IN", "en-IN", "en"],
-  "ur-IN": ["ur", "hi-IN", "en-IN", "en"],
-  "kn-IN": ["kn", "hi-IN", "en-IN", "en"],
-  "ml-IN": ["ml", "hi-IN", "en-IN", "en"],
-  "pa-IN": ["pa", "hi-IN", "en-IN", "en"],
-  "or-IN": ["or", "hi-IN", "en-IN", "en"],
+  "hi-IN": ["hi", "hi-IN"],
+  "bn-IN": ["bn", "bn-IN"],
+  "te-IN": ["te", "te-IN"],
+  "mr-IN": ["mr", "mr-IN"],
+  "ta-IN": ["ta", "ta-IN"],
+  "gu-IN": ["gu", "gu-IN"],
+  "ur-IN": ["ur", "ur-IN"],
+  "kn-IN": ["kn", "kn-IN"],
+  "ml-IN": ["ml", "ml-IN"],
+  "pa-IN": ["pa", "pa-IN"],
+  "or-IN": ["or", "or-IN"],
   "en-IN": ["en-IN", "en-GB", "en-US", "en"],
+};
+
+// Languages that are considered "same family" (no fallback notification needed)
+const SAME_FAMILY_MAP: Record<string, string[]> = {
+  "hi-IN": ["hi", "hi-IN"],
+  "bn-IN": ["bn", "bn-IN"],
+  "te-IN": ["te", "te-IN"],
+  "mr-IN": ["mr", "mr-IN"],
+  "ta-IN": ["ta", "ta-IN"],
+  "gu-IN": ["gu", "gu-IN"],
+  "ur-IN": ["ur", "ur-IN"],
+  "kn-IN": ["kn", "kn-IN"],
+  "ml-IN": ["ml", "ml-IN"],
+  "pa-IN": ["pa", "pa-IN"],
+  "or-IN": ["or", "or-IN"],
+  "en-IN": ["en-IN", "en-GB", "en-US", "en"],
+  "en": ["en-IN", "en-GB", "en-US", "en"],
 };
 
 /**
@@ -186,13 +204,34 @@ export function useSpeechSynthesis({
     return score;
   }, []);
 
-  // Find the best voice for a language with fallback support
-  const findVoice = useCallback((lang: string): { voice: SpeechSynthesisVoice | null; actualLang: string } => {
-    if (voices.length === 0) return { voice: null, actualLang: lang };
-
-    const fallbackChain = LANGUAGE_FALLBACKS[lang] || [lang.split("-")[0], "en-IN", "en"];
+  // Check if two languages are in the same family (no fallback notification needed)
+  const isSameLanguageFamily = useCallback((requestedLang: string, actualLang: string): boolean => {
+    const requestedBase = requestedLang.split("-")[0].toLowerCase();
+    const actualBase = actualLang.split("-")[0].toLowerCase();
     
-    for (const tryLang of [lang, ...fallbackChain]) {
+    // Same base language = same family
+    if (requestedBase === actualBase) return true;
+    
+    // Check the explicit same-family map
+    const family = SAME_FAMILY_MAP[requestedLang];
+    if (family && family.some(l => l.toLowerCase() === actualLang.toLowerCase() || l.split("-")[0].toLowerCase() === actualBase)) {
+      return true;
+    }
+    
+    return false;
+  }, []);
+
+  // Find the best voice for a language with fallback support
+  const findVoice = useCallback((lang: string): { voice: SpeechSynthesisVoice | null; actualLang: string; isSameFamily: boolean } => {
+    if (voices.length === 0) return { voice: null, actualLang: lang, isSameFamily: true };
+
+    const langBase = lang.split("-")[0];
+    // Build fallback chain: exact match -> base language -> configured fallbacks -> English
+    const fallbackChain = [lang, langBase, ...(LANGUAGE_FALLBACKS[lang] || []), "en-IN", "en"];
+    // Remove duplicates while preserving order
+    const uniqueFallbacks = [...new Set(fallbackChain)];
+    
+    for (const tryLang of uniqueFallbacks) {
       // Score all voices for this language
       const scoredVoices = voices
         .map(v => ({ voice: v, score: scoreVoice(v, tryLang) }))
@@ -201,21 +240,19 @@ export function useSpeechSynthesis({
       
       if (scoredVoices.length > 0) {
         const bestVoice = scoredVoices[0].voice;
-        const usedFallback = tryLang !== lang;
+        const sameFamily = isSameLanguageFamily(lang, tryLang);
         
-        if (usedFallback) {
-          console.log(`[TTS] Using fallback: ${lang} -> ${tryLang} (${bestVoice.name})`);
-        }
+        console.log(`[TTS] Found voice for ${lang}: ${bestVoice.name} (${bestVoice.lang}), sameFamily: ${sameFamily}`);
         
-        return { voice: bestVoice, actualLang: tryLang };
+        return { voice: bestVoice, actualLang: tryLang, isSameFamily: sameFamily };
       }
     }
 
     // Last resort: use default voice
     const defaultVoice = voices.find(v => v.default) || voices[0];
     console.log(`[TTS] No suitable voice for ${lang}, using default: ${defaultVoice?.name}`);
-    return { voice: defaultVoice || null, actualLang: "en" };
-  }, [voices, scoreVoice]);
+    return { voice: defaultVoice || null, actualLang: "en", isSameFamily: false };
+  }, [voices, scoreVoice, isSameLanguageFamily]);
 
   // Get language-specific settings
   const getLanguageSettings = useCallback((lang: string) => {
@@ -301,10 +338,11 @@ export function useSpeechSynthesis({
     }
 
     // Find the best voice
-    const { voice, actualLang } = findVoice(targetLang);
+    const { voice, actualLang, isSameFamily } = findVoice(targetLang);
     
-    // Notify about fallback if different language is used
-    if (actualLang !== targetLang && onFallbackRef.current) {
+    // Only notify about fallback if using a DIFFERENT language family
+    // (e.g., Hindi -> English, not hi-IN -> hi)
+    if (!isSameFamily && actualLang !== targetLang && onFallbackRef.current) {
       const fromName = LANGUAGE_SETTINGS[targetLang]?.name || targetLang;
       const toName = LANGUAGE_SETTINGS[actualLang]?.name || actualLang;
       onFallbackRef.current(fromName, toName);
