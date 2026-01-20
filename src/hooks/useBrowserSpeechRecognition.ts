@@ -94,14 +94,14 @@ export function useBrowserSpeechRecognition({
     if (noSpeechTimeoutRef.current) {
       clearTimeout(noSpeechTimeoutRef.current);
     }
-    // Set a 15-second timeout for no speech - auto stop to save resources
+    // Set a 30-second timeout for no speech - auto stop to save resources
     noSpeechTimeoutRef.current = setTimeout(() => {
       if (recognitionRef.current && isListeningRef.current) {
-        console.log("[SpeechRecognition] No speech for 15s, stopping");
+        console.log("[SpeechRecognition] No speech for 30s, stopping");
         shouldRestartRef.current = false;
         recognitionRef.current.stop();
       }
-    }, 15000);
+    }, 30000);
   }, []);
 
   const ensureRecognition = useCallback(() => {
@@ -160,28 +160,58 @@ export function useBrowserSpeechRecognition({
     recognition.onresult = (event: any) => {
       // Reset no-speech timeout since we're getting results
       resetNoSpeechTimeout();
-      
-      // Build display string: finalized + current interim
-      let interim = "";
-      const resultIndex: number = typeof event.resultIndex === "number" ? event.resultIndex : 0;
 
-      for (let i = resultIndex; i < event.results.length; i++) {
-        const res = event.results[i];
+      // Some mobile browsers re-send previous segments, so we build a stable
+      // "final + interim" display and only emit when it changes.
+      const results: any[] = Array.from(event.results || []);
+
+      const finalParts: string[] = [];
+      let interimText = "";
+
+      for (const res of results) {
         const text: string = (res?.[0]?.transcript || "").trim();
         if (!text) continue;
 
         if (res.isFinal) {
-          finalTranscriptRef.current = finalTranscriptRef.current
-            ? `${finalTranscriptRef.current} ${text}`
-            : text;
-          onTranscriptRef.current(finalTranscriptRef.current, true);
+          finalParts.push(text);
         } else {
-          interim = interim ? `${interim} ${text}` : text;
+          // Keep the most recent interim chunk
+          interimText = text;
         }
       }
 
-      const display = [finalTranscriptRef.current, interim].filter(Boolean).join(" ").trim();
+      const finalText = finalParts.join(" ").replace(/\s+/g, " ").trim();
+      const display = [finalText, interimText]
+        .filter(Boolean)
+        .join(" ")
+        .replace(/\s+/g, " ")
+        .trim();
+
+      // Avoid spamming the UI with identical repeats
+      const lastEmitted = (recognitionRef.current as any)?._lastEmittedTranscript as string | undefined;
+      if (display && display === lastEmitted) return;
+      if (recognitionRef.current) {
+        (recognitionRef.current as any)._lastEmittedTranscript = display;
+      }
+
+      // If we have a final transcript and no interim, treat as final.
+      // This prevents repeated/duplicated text on Android and iOS.
+      if (finalText && !interimText) {
+        finalTranscriptRef.current = finalText;
+        onTranscriptRef.current(finalText, true);
+
+        // Stop after final to keep chat input clean (user can tap mic again).
+        shouldRestartRef.current = false;
+        try {
+          recognitionRef.current?.stop();
+        } catch {
+          // ignore
+        }
+        return;
+      }
+
       if (display) {
+        finalTranscriptRef.current = finalText;
         onTranscriptRef.current(display, false);
       }
     };
@@ -307,7 +337,7 @@ export function useBrowserSpeechRecognition({
   const stop = useCallback(() => {
     shouldRestartRef.current = false;
     clearTimeouts();
-    
+
     const recognition = recognitionRef.current;
     if (recognition) {
       try {
@@ -315,10 +345,12 @@ export function useBrowserSpeechRecognition({
       } catch {
         // Ignore stop errors
       }
+    } else {
+      // If there's no instance, still reflect stop in UI
+      setIsConnecting(false);
+      setIsListening(false);
+      onEndRef.current?.();
     }
-    setIsConnecting(false);
-    setIsListening(false);
-    onEndRef.current?.();
   }, [clearTimeouts]);
 
   // Cleanup on unmount
