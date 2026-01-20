@@ -45,11 +45,11 @@ const Index = () => {
   }, [toast]);
 
   const handleTTSFallback = useCallback((fromLang: string, toLang: string) => {
-    toast({
-      title: "Voice Fallback",
-      description: `${fromLang} voice not available. Using ${toLang} instead.`,
-    });
-  }, [toast]);
+    // Some devices/browsers simply don't have TTS voices installed for certain
+    // Indian languages. We still speak using the closest available voice.
+    // To avoid confusing users with repeated warnings, we suppress this toast.
+    console.warn("[TTS] Voice fallback:", { fromLang, toLang });
+  }, []);
 
   const {
     speak,
