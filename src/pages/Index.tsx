@@ -64,16 +64,35 @@ const Index = () => {
   });
 
   // Browser Speech-to-Text (Web Speech API)
+  // Track if current input came from speech for better handling
+  const isSpeechInputRef = useRef(false);
+  
   const handleTranscript = useCallback((text: string, isFinal: boolean) => {
+    isSpeechInputRef.current = true;
     setInput(text);
+    console.log("[Speech] Transcript received:", { text, isFinal });
   }, []);
 
   const handleSpeechError = useCallback((error: string) => {
+    console.error("[Speech] Error:", error);
     toast({
       title: "Voice Error",
       description: error,
       variant: "destructive",
     });
+  }, [toast]);
+  
+  const handleSpeechEnd = useCallback(() => {
+    console.log("[Speech] Session ended");
+    // Optional: auto-send if there's content and it was final
+    // For now just notify user
+    if (isSpeechInputRef.current) {
+      toast({ 
+        title: "Voice input received", 
+        description: "Tap Send or continue speaking" 
+      });
+      isSpeechInputRef.current = false;
+    }
   }, [toast]);
 
   // Map language codes to display names
@@ -113,6 +132,7 @@ const Index = () => {
     onTranscript: handleTranscript,
     onError: handleSpeechError,
     onStart: handleSpeechStart,
+    onEnd: handleSpeechEnd,
     languageCode: language,
   });
 
@@ -579,7 +599,7 @@ Please explain compassionately and remove any stigma around mental health.`
                 <div className="flex items-center justify-between">
                   <h2 className="text-lg font-semibold">HealthAI Assistant</h2>
                   <div className="flex items-center gap-2 text-sm text-muted-foreground">
-                    <span className="inline-block w-2 h-2 bg-green-500 rounded-full animate-pulse"></span>
+                    <span className="inline-block w-2 h-2 bg-primary rounded-full animate-pulse"></span>
                     <span className="text-primary font-medium">Online</span>
                   </div>
                 </div>
@@ -652,9 +672,9 @@ Please explain compassionately and remove any stigma around mental health.`
                         disabled={loading || isConnecting}
                         className={`transition-colors ${
                           isListening 
-                            ? "bg-red-100 border-red-300 text-red-600 animate-pulse" 
+                            ? "bg-destructive/10 border-destructive/50 text-destructive animate-pulse" 
                             : isConnecting
-                            ? "bg-yellow-100 border-yellow-300 text-yellow-600"
+                            ? "bg-muted border-muted-foreground/30 text-muted-foreground"
                             : "bg-primary text-primary-foreground hover:bg-primary/90"
                         }`}
                       >
