@@ -45,20 +45,29 @@ export function useBrowserSpeechRecognition({
   onEnd,
   languageCode,
 }: UseBrowserSpeechRecognitionOptions) {
+  // ALL useState hooks MUST come first, before any other hooks
+  const [isListening, setIsListening] = useState(false);
+  const [isConnecting, setIsConnecting] = useState(false);
+
+  // useMemo comes after useState
   const RecognitionCtor = useMemo(() => getRecognitionCtor(), []);
   const isSupported = !!RecognitionCtor;
 
+  // useRef hooks
   const recognitionRef = useRef<SpeechRecognition | null>(null);
   const finalTranscriptRef = useRef<string>("");
   const shouldRestartRef = useRef(false);
   const restartTimeoutRef = useRef<NodeJS.Timeout | null>(null);
   const noSpeechTimeoutRef = useRef<NodeJS.Timeout | null>(null);
+  const isListeningRef = useRef(false);
 
+  // Callback refs for stable references
   const onTranscriptRef = useRef(onTranscript);
   const onErrorRef = useRef(onError);
   const onStartRef = useRef(onStart);
   const onEndRef = useRef(onEnd);
 
+  // Keep callback refs updated
   useEffect(() => {
     onTranscriptRef.current = onTranscript;
     onErrorRef.current = onError;
@@ -66,10 +75,12 @@ export function useBrowserSpeechRecognition({
     onEndRef.current = onEnd;
   }, [onTranscript, onError, onStart, onEnd]);
 
-  const [isListening, setIsListening] = useState(false);
-  const [isConnecting, setIsConnecting] = useState(false);
+  // Keep listening ref in sync with state
+  useEffect(() => {
+    isListeningRef.current = isListening;
+  }, [isListening]);
 
-  // Cleanup timeouts
+  // Cleanup timeouts helper
   const clearTimeouts = useCallback(() => {
     if (restartTimeoutRef.current) {
       clearTimeout(restartTimeoutRef.current);
@@ -80,15 +91,6 @@ export function useBrowserSpeechRecognition({
       noSpeechTimeoutRef.current = null;
     }
   }, []);
-
-  // Use ref to track listening state for callbacks to avoid stale closures
-  const isListeningRef = useRef(false);
-  
-  // Keep ref in sync with state
-  useEffect(() => {
-    isListeningRef.current = isListening;
-  }, [isListening]);
-
   // Reset no-speech timeout (called when speech is detected)
   const resetNoSpeechTimeout = useCallback(() => {
     if (noSpeechTimeoutRef.current) {
