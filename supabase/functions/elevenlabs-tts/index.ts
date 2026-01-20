@@ -87,7 +87,7 @@ serve(async (req) => {
       );
     }
 
-    const { text, language = 'en' } = await req.json();
+    const { text, language = 'en', voiceId: customVoiceId } = await req.json();
 
     if (!text || typeof text !== 'string') {
       return new Response(
@@ -102,9 +102,14 @@ serve(async (req) => {
     // Limit text length to prevent abuse (ElevenLabs has a 5000 char limit)
     const trimmedText = text.slice(0, 5000);
     
-    const { voiceId, name } = getVoiceForLanguage(language);
+    // Use custom voiceId if provided, otherwise use language-based selection
+    const voiceInfo = customVoiceId 
+      ? { voiceId: customVoiceId, name: 'Custom' }
+      : getVoiceForLanguage(language);
     
-    console.log(`[ElevenLabs TTS] Generating audio for language: ${language}, voice: ${name} (${voiceId}), text length: ${trimmedText.length}`);
+    const { voiceId, name } = voiceInfo;
+    
+    console.log(`[ElevenLabs TTS] Generating audio for language: ${language}, voice: ${name} (${voiceId}), text length: ${trimmedText.length}${customVoiceId ? ' [CUSTOM VOICE]' : ''}`);
 
     const response = await fetch(
       `https://api.elevenlabs.io/v1/text-to-speech/${voiceId}?output_format=mp3_44100_128`,
