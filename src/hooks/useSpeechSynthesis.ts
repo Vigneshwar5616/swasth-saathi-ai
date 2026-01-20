@@ -225,25 +225,48 @@ export function useSpeechSynthesis({
   const findVoice = useCallback((lang: string): { voice: SpeechSynthesisVoice | null; actualLang: string; isSameFamily: boolean } => {
     if (voices.length === 0) return { voice: null, actualLang: lang, isSameFamily: true };
 
-    const langBase = lang.split("-")[0];
-    // Build fallback chain: exact match -> base language -> configured fallbacks -> English
-    const fallbackChain = [lang, langBase, ...(LANGUAGE_FALLBACKS[lang] || []), "en-IN", "en"];
-    // Remove duplicates while preserving order
-    const uniqueFallbacks = [...new Set(fallbackChain)];
+    const langBase = lang.split("-")[0].toLowerCase();
     
-    for (const tryLang of uniqueFallbacks) {
-      // Score all voices for this language
-      const scoredVoices = voices
-        .map(v => ({ voice: v, score: scoreVoice(v, tryLang) }))
-        .filter(({ score }) => score >= 70) // Only consider reasonable matches
+    // First, try to find a direct match for the requested language
+    const directMatches = voices.filter(v => {
+      const vLang = v.lang.toLowerCase();
+      const vBase = vLang.split("-")[0];
+      return vLang === lang.toLowerCase() || vBase === langBase;
+    });
+    
+    if (directMatches.length > 0) {
+      // Score and pick the best direct match
+      const scoredDirect = directMatches
+        .map(v => ({ voice: v, score: scoreVoice(v, lang) }))
         .sort((a, b) => b.score - a.score);
       
-      if (scoredVoices.length > 0) {
-        const bestVoice = scoredVoices[0].voice;
+      const bestVoice = scoredDirect[0].voice;
+      console.log(`[TTS] Direct match for ${lang}: ${bestVoice.name} (${bestVoice.lang})`);
+      return { voice: bestVoice, actualLang: bestVoice.lang, isSameFamily: true };
+    }
+    
+    // No direct match - try fallback chain
+    const fallbackChain = LANGUAGE_FALLBACKS[lang] || [];
+    const fullFallbackChain = [...fallbackChain, "en-IN", "en-US", "en"];
+    
+    for (const tryLang of fullFallbackChain) {
+      const tryBase = tryLang.split("-")[0].toLowerCase();
+      
+      const fallbackMatches = voices.filter(v => {
+        const vLang = v.lang.toLowerCase();
+        const vBase = vLang.split("-")[0];
+        return vLang === tryLang.toLowerCase() || vBase === tryBase;
+      });
+      
+      if (fallbackMatches.length > 0) {
+        const scoredFallback = fallbackMatches
+          .map(v => ({ voice: v, score: scoreVoice(v, tryLang) }))
+          .sort((a, b) => b.score - a.score);
+        
+        const bestVoice = scoredFallback[0].voice;
         const sameFamily = isSameLanguageFamily(lang, tryLang);
         
-        console.log(`[TTS] Found voice for ${lang}: ${bestVoice.name} (${bestVoice.lang}), sameFamily: ${sameFamily}`);
-        
+        console.log(`[TTS] Fallback for ${lang} -> ${tryLang}: ${bestVoice.name} (${bestVoice.lang}), sameFamily: ${sameFamily}`);
         return { voice: bestVoice, actualLang: tryLang, isSameFamily: sameFamily };
       }
     }
