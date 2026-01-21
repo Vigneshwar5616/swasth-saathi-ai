@@ -1,4 +1,4 @@
-import { createContext, useContext, useEffect, useState, ReactNode } from "react";
+import { createContext, useContext, useEffect, useRef, useState, ReactNode } from "react";
 import { User, Session } from "@supabase/supabase-js";
 import { supabase } from "@/integrations/supabase/client";
 import { toast } from "@/components/ui/sonner";
@@ -19,7 +19,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const [user, setUser] = useState<User | null>(null);
   const [session, setSession] = useState<Session | null>(null);
   const [loading, setLoading] = useState(true);
-  const [didWelcomeAfterConfirm, setDidWelcomeAfterConfirm] = useState(false);
+  const didWelcomeAfterConfirmRef = useRef(false);
 
   useEffect(() => {
     // Set up auth state listener FIRST
@@ -30,16 +30,26 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         setUser(session?.user ?? null);
         setLoading(false);
         
-        // Handle email confirmation - clear URL hash after successful confirmation
-        if (event === 'SIGNED_IN' && window.location.hash.includes('access_token')) {
-          if (!didWelcomeAfterConfirm) {
-            toast.success("Welcome to Aarogyasri!", {
-              description: "Email confirmed successfully. You're signed in.",
-            });
-            setDidWelcomeAfterConfirm(true);
+        // Handle email confirmation redirects (hash-based implicit flow OR PKCE code flow)
+        if (event === "SIGNED_IN") {
+          const searchParams = new URLSearchParams(window.location.search);
+          const isAuthRedirect =
+            window.location.hash.includes("access_token") ||
+            searchParams.has("code") ||
+            searchParams.has("token") ||
+            searchParams.has("token_hash") ||
+            searchParams.get("type") === "signup";
+
+          if (isAuthRedirect) {
+            if (!didWelcomeAfterConfirmRef.current) {
+              toast.success("Welcome to Aarogyasri!", {
+                description: "Email confirmed successfully. You're signed in.",
+              });
+              didWelcomeAfterConfirmRef.current = true;
+            }
+            // Clean up the URL by removing hash + auth query params
+            window.history.replaceState(null, "", window.location.pathname);
           }
-          // Clean up the URL by removing the hash
-          window.history.replaceState(null, '', window.location.pathname);
         }
       }
     );
