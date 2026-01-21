@@ -1,6 +1,8 @@
 import { createContext, useContext, useEffect, useState, ReactNode } from "react";
 import { User, Session } from "@supabase/supabase-js";
 import { supabase } from "@/integrations/supabase/client";
+import { toast } from "@/components/ui/sonner";
+import { getAppRedirectUrl } from "@/lib/authRedirect";
 
 interface AuthContextType {
   user: User | null;
@@ -17,6 +19,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const [user, setUser] = useState<User | null>(null);
   const [session, setSession] = useState<Session | null>(null);
   const [loading, setLoading] = useState(true);
+  const [didWelcomeAfterConfirm, setDidWelcomeAfterConfirm] = useState(false);
 
   useEffect(() => {
     // Set up auth state listener FIRST
@@ -29,6 +32,12 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         
         // Handle email confirmation - clear URL hash after successful confirmation
         if (event === 'SIGNED_IN' && window.location.hash.includes('access_token')) {
+          if (!didWelcomeAfterConfirm) {
+            toast.success("Welcome to Aarogyasri!", {
+              description: "Email confirmed successfully. You're signed in.",
+            });
+            setDidWelcomeAfterConfirm(true);
+          }
           // Clean up the URL by removing the hash
           window.history.replaceState(null, '', window.location.pathname);
         }
@@ -69,7 +78,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   };
 
   const signUp = async (email: string, password: string, fullName?: string) => {
-    const redirectUrl = `${window.location.origin}/`;
+    const redirectUrl = getAppRedirectUrl("/");
     
     const { data, error } = await supabase.auth.signUp({
       email,
