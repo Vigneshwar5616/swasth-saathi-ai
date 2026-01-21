@@ -30,6 +30,8 @@ const Auth = () => {
   const [resendLoading, setResendLoading] = useState(false);
   const [showForgotPassword, setShowForgotPassword] = useState(false);
   const [showEmailNotConfirmed, setShowEmailNotConfirmed] = useState(false);
+  const [justSignedUp, setJustSignedUp] = useState(false);
+  const [signedUpEmail, setSignedUpEmail] = useState("");
   const [errors, setErrors] = useState<{ email?: string; password?: string }>({});
 
   // Redirect if already logged in
@@ -66,15 +68,35 @@ const Auth = () => {
     setLoading(false);
     
     if (error) {
-      let message = "Failed to sign in. Please try again.";
-      if (error.message?.includes("Invalid login credentials")) {
-        message = "Invalid email or password. Please check your credentials.";
-      } else if (error.message?.includes("Email not confirmed")) {
+      // Check if user just signed up with this email - they likely haven't confirmed yet
+      const isRecentSignup = justSignedUp && email.toLowerCase() === signedUpEmail.toLowerCase();
+      
+      if (error.message?.includes("Email not confirmed")) {
         setShowEmailNotConfirmed(true);
-        return; // Don't show toast, show inline message instead
+        return;
+      } else if (error.message?.includes("Invalid login credentials")) {
+        // Supabase returns "Invalid login credentials" for unconfirmed emails too (security feature)
+        // If user just signed up with this email, assume they need to confirm
+        if (isRecentSignup) {
+          setShowEmailNotConfirmed(true);
+          toast({ 
+            title: "Please confirm your email first", 
+            description: "Check your inbox for the confirmation link before signing in.",
+            variant: "destructive" 
+          });
+          return;
+        }
+        toast({ 
+          title: "Sign in failed", 
+          description: "Invalid email or password. Please check your credentials.", 
+          variant: "destructive" 
+        });
+      } else {
+        toast({ title: "Sign in failed", description: error.message || "Please try again.", variant: "destructive" });
       }
-      toast({ title: "Sign in failed", description: message, variant: "destructive" });
     } else {
+      setJustSignedUp(false);
+      setSignedUpEmail("");
       toast({ title: "Welcome back!", description: "You have successfully signed in." });
     }
   };
@@ -127,10 +149,13 @@ const Auth = () => {
       });
       navigate("/");
     } else {
-      // Email confirmation required
+      // Email confirmation required - remember this signup
+      setJustSignedUp(true);
+      setSignedUpEmail(email);
+      setShowEmailNotConfirmed(true);
       toast({ 
-        title: "Account created!", 
-        description: "Please check your email to confirm your account, then sign in." 
+        title: "Account created! Check your email", 
+        description: "We sent a confirmation link. Please click it before signing in." 
       });
     }
   };
@@ -324,10 +349,19 @@ const Auth = () => {
                   </div>
                   
                   {showEmailNotConfirmed && (
-                    <div className="p-3 rounded-lg bg-muted border border-border space-y-2">
-                      <p className="text-sm text-muted-foreground">
-                        Please confirm your email before signing in.
-                      </p>
+                    <div className="p-4 rounded-lg bg-primary/10 border border-primary/20 space-y-3">
+                      <div className="flex items-start gap-2">
+                        <Mail className="h-5 w-5 text-primary mt-0.5 shrink-0" />
+                        <div className="space-y-1">
+                          <p className="text-sm font-medium text-foreground">
+                            Check your email first!
+                          </p>
+                          <p className="text-xs text-muted-foreground">
+                            We sent a confirmation link to <strong>{signedUpEmail || email}</strong>. 
+                            Click the link in your email, then come back to sign in.
+                          </p>
+                        </div>
+                      </div>
                       <Button 
                         type="button" 
                         variant="outline" 
