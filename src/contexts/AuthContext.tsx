@@ -22,9 +22,16 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     // Set up auth state listener FIRST
     const { data: { subscription } } = supabase.auth.onAuthStateChange(
       (event, session) => {
+        console.log("[Auth] State changed:", event, session?.user?.email);
         setSession(session);
         setUser(session?.user ?? null);
         setLoading(false);
+        
+        // Handle email confirmation - clear URL hash after successful confirmation
+        if (event === 'SIGNED_IN' && window.location.hash.includes('access_token')) {
+          // Clean up the URL by removing the hash
+          window.history.replaceState(null, '', window.location.pathname);
+        }
       }
     );
 
