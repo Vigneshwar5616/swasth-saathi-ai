@@ -26,7 +26,9 @@ const Auth = () => {
   const [rememberMe, setRememberMe] = useState(true);
   const [loading, setLoading] = useState(false);
   const [resetLoading, setResetLoading] = useState(false);
+  const [resendLoading, setResendLoading] = useState(false);
   const [showForgotPassword, setShowForgotPassword] = useState(false);
+  const [showEmailNotConfirmed, setShowEmailNotConfirmed] = useState(false);
   const [errors, setErrors] = useState<{ email?: string; password?: string }>({});
 
   // Redirect if already logged in
@@ -57,6 +59,7 @@ const Auth = () => {
     e.preventDefault();
     if (!validateForm()) return;
     
+    setShowEmailNotConfirmed(false);
     setLoading(true);
     const { error } = await signIn(email, password, rememberMe);
     setLoading(false);
@@ -66,12 +69,38 @@ const Auth = () => {
       if (error.message?.includes("Invalid login credentials")) {
         message = "Invalid email or password. Please check your credentials.";
       } else if (error.message?.includes("Email not confirmed")) {
-        message = "Please confirm your email before signing in.";
+        setShowEmailNotConfirmed(true);
+        return; // Don't show toast, show inline message instead
       }
       toast({ title: "Sign in failed", description: message, variant: "destructive" });
     } else {
-      // Session persistence is handled by Supabase's built-in session management
       toast({ title: "Welcome back!", description: "You have successfully signed in." });
+    }
+  };
+
+  const handleResendConfirmation = async () => {
+    setResendLoading(true);
+    const { error } = await supabase.auth.resend({
+      type: 'signup',
+      email,
+      options: {
+        emailRedirectTo: `${window.location.origin}/`,
+      },
+    });
+    setResendLoading(false);
+    
+    if (error) {
+      toast({ 
+        title: "Failed to resend", 
+        description: error.message, 
+        variant: "destructive" 
+      });
+    } else {
+      toast({ 
+        title: "Confirmation email sent!", 
+        description: "Check your inbox and click the link to confirm." 
+      });
+      setShowEmailNotConfirmed(false);
     }
   };
 
@@ -292,6 +321,25 @@ const Auth = () => {
                       Remember me
                     </Label>
                   </div>
+                  
+                  {showEmailNotConfirmed && (
+                    <div className="p-3 rounded-lg bg-muted border border-border space-y-2">
+                      <p className="text-sm text-muted-foreground">
+                        Please confirm your email before signing in.
+                      </p>
+                      <Button 
+                        type="button" 
+                        variant="outline" 
+                        size="sm"
+                        className="w-full"
+                        onClick={handleResendConfirmation}
+                        disabled={resendLoading}
+                      >
+                        {resendLoading ? <Loader2 className="h-4 w-4 animate-spin mr-2" /> : <Mail className="h-4 w-4 mr-2" />}
+                        Resend Confirmation Email
+                      </Button>
+                    </div>
+                  )}
                   
                   <Button type="submit" className="w-full" disabled={loading}>
                     {loading ? <Loader2 className="h-4 w-4 animate-spin mr-2" /> : null}
