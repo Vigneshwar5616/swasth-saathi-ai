@@ -1,11 +1,23 @@
 /**
  * Returns a public web URL for auth email redirects.
  *
- * Why: on mobile (Capacitor / in-app webview) the app origin is often localhost,
- * but email confirmation links must open a reachable public URL.
+ * IMPORTANT: Always use the published URL for email redirects to ensure
+ * users are redirected to a reachable public URL, not localhost or preview URLs.
  */
 const PUBLIC_APP_URL = "https://aarogyasri.lovable.app";
 
+/**
+ * For auth email redirects, ALWAYS use the published URL.
+ * This ensures email confirmation links work regardless of where signup occurred.
+ */
+export const getAppRedirectUrl = (path: string): string => {
+  return new URL(path, PUBLIC_APP_URL).toString();
+};
+
+/**
+ * Returns the current origin or falls back to public URL if on localhost/mobile.
+ * Use this for non-auth purposes where current origin matters.
+ */
 export const getPublicAppBaseUrl = (): string => {
   const origin = window.location.origin;
 
@@ -15,13 +27,6 @@ export const getPublicAppBaseUrl = (): string => {
     origin.startsWith("capacitor://") ||
     origin.startsWith("ionic://");
 
-  // Lovable projects may not reliably expose VITE_* env vars at runtime;
-  // use a stable published URL when running in local/webview contexts.
   if (originLooksLocal) return PUBLIC_APP_URL;
   return origin;
-};
-
-export const getAppRedirectUrl = (path: string): string => {
-  const base = getPublicAppBaseUrl();
-  return new URL(path, base).toString();
 };
