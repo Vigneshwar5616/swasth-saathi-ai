@@ -15,7 +15,6 @@ import { AudioPermissionRequest } from "@/components/chat/AudioPermissionRequest
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/contexts/AuthContext";
 import { useBrowserSpeechRecognition } from "@/hooks/useBrowserSpeechRecognition";
-import { useSpeechSynthesis } from "@/hooks/useSpeechSynthesis";
 import { useElevenLabsTTS } from "@/hooks/useElevenLabsTTS";
 
 interface Message { role: "user" | "assistant"; content: string }
@@ -35,50 +34,24 @@ const Index = () => {
   const chatContainerRef = useRef<HTMLDivElement>(null);
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const { toast } = useToast();
-
-  // ElevenLabs TTS (primary) with browser TTS fallback
-  const handleTTSError = useCallback((error: string) => {
-    console.warn("[TTS] Error:", error);
-  }, []);
-
-  const handleTTSFallback = useCallback((fromLang: string, toLang: string) => {
-    console.warn("[TTS] Voice fallback:", { fromLang, toLang });
-  }, []);
-
-  // ElevenLabs TTS (high quality)
+  // ElevenLabs TTS with streaming support
   const {
-    speak: speakElevenLabs,
-    stop: stopElevenLabs,
-    isSpeaking: isSpeakingElevenLabs,
-    isLoading: isLoadingElevenLabs,
+    queueChunk: queueTTSChunk,
+    finalize: finalizeTTS,
+    stop: stopSpeaking,
+    reset: resetTTS,
+    isSpeaking,
+    isLoading: isTTSLoading,
   } = useElevenLabsTTS({
     onError: (error) => {
-      console.warn("[ElevenLabs] Failed, falling back to browser TTS:", error);
-      // Fallback will be handled by speakResponse
+      console.warn("[ElevenLabs] Error:", error);
+      toast({
+        title: "Voice Error",
+        description: "Could not play audio response",
+        variant: "destructive",
+      });
     },
   });
-
-  // Browser TTS (fallback)
-  const {
-    speak: speakBrowser,
-    stop: stopBrowser,
-    isSpeaking: isSpeakingBrowser,
-    isSupported: isTTSSupported,
-    availableLanguages,
-  } = useSpeechSynthesis({
-    defaultLanguage: language,
-    onError: handleTTSError,
-    onFallback: handleTTSFallback,
-  });
-
-  // Combined speaking state
-  const isSpeaking = isSpeakingElevenLabs || isSpeakingBrowser || isLoadingElevenLabs;
-
-  // Combined stop function
-  const stopSpeaking = useCallback(() => {
-    stopElevenLabs();
-    stopBrowser();
-  }, [stopElevenLabs, stopBrowser]);
 
   // Browser Speech-to-Text (Web Speech API)
   // Track if current input came from speech for better handling
@@ -239,15 +212,16 @@ const Index = () => {
       }
     }
   };
+  // Stream text chunks to ElevenLabs TTS as they arrive
+  const streamToTTS = useCallback((textChunk: string) => {
+    if (!textChunk) return;
+    queueTTSChunk(textChunk, language);
+  }, [queueTTSChunk, language]);
 
-  // Speak function - use browser TTS for instant playback (no delay)
-  // ElevenLabs is available but has ~10-20s generation delay for long responses
-  const speakResponse = useCallback((text: string) => {
-    if (!text || !text.trim() || text.length <= 20) return;
-    
-    // Use browser TTS for instant playback
-    speakBrowser(text, language);
-  }, [speakBrowser, language]);
+  // Finalize TTS when response is complete
+  const finishTTS = useCallback(() => {
+    finalizeTTS();
+  }, [finalizeTTS]);
 
 
   // Helper to get auth headers
@@ -327,6 +301,9 @@ const Index = () => {
     const text = input.trim();
     if (!text) return;
     
+    // Reset TTS for new message
+    resetTTS();
+    
     // Filter out any empty messages before adding new one
     const cleanMessages = messages.filter(m => m.content && m.content.trim().length > 0);
     const next = [...cleanMessages, { role: "user", content: text } as Message];
@@ -383,6 +360,8 @@ const Index = () => {
             const content = json.choices?.[0]?.delta?.content;
             if (content) {
               assistantContent += content;
+              // Stream text chunks to TTS as they arrive
+              streamToTTS(content);
               setMessages(curr => {
                 const updated = [...curr];
                 if (updated.length > 0) {
@@ -396,6 +375,9 @@ const Index = () => {
           }
         }
       }
+      
+      // Finalize TTS when streaming is done
+      finishTTS();
       
       // If no streaming content, try non-streaming fallback
       if (!assistantContent || assistantContent.length === 0) {
@@ -427,11 +409,10 @@ const Index = () => {
           }
           return updated;
         });
-      }
-      
-      // Speak immediately when we have content
-      if (assistantContent && assistantContent !== "..." && assistantContent.length > 20) {
-        speakResponse(assistantContent);
+        
+        // For non-streaming, send entire content to TTS
+        streamToTTS(assistantContent);
+        finishTTS();
       }
       
       // Save conversation to database (only for logged in users)
@@ -522,7 +503,11 @@ Please explain compassionately and remove any stigma around mental health.`
       const data = await resp.json();
       const assistantContent = data?.choices?.[0]?.message?.content || "I'm sorry, I couldn't get information right now.";
       setMessages(curr => [...curr, { role: "assistant", content: assistantContent }]);
-      speakResponse(assistantContent);
+      
+      // Send to TTS
+      resetTTS();
+      streamToTTS(assistantContent);
+      finishTTS();
       
       if (user && assistantContent) {
         await supabase.from("user_conversations").insert({
