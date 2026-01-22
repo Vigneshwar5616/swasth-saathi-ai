@@ -240,19 +240,14 @@ const Index = () => {
     }
   };
 
-  // Speak function wrapper that uses ElevenLabs with browser fallback
-  const speakResponse = useCallback(async (text: string) => {
+  // Speak function - use browser TTS for instant playback (no delay)
+  // ElevenLabs is available but has ~10-20s generation delay for long responses
+  const speakResponse = useCallback((text: string) => {
     if (!text || !text.trim() || text.length <= 20) return;
     
-    try {
-      // Try ElevenLabs first (high quality)
-      await speakElevenLabs(text, language);
-    } catch (error) {
-      console.warn("[TTS] ElevenLabs failed, using browser TTS:", error);
-      // Fallback to browser TTS
-      speakBrowser(text, language);
-    }
-  }, [speakElevenLabs, speakBrowser, language]);
+    // Use browser TTS for instant playback
+    speakBrowser(text, language);
+  }, [speakBrowser, language]);
 
 
   // Helper to get auth headers
