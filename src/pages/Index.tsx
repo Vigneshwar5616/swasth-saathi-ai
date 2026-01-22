@@ -16,6 +16,7 @@ import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/contexts/AuthContext";
 import { useBrowserSpeechRecognition } from "@/hooks/useBrowserSpeechRecognition";
 import { useSpeechSynthesis } from "@/hooks/useSpeechSynthesis";
+import { useElevenLabsTTS } from "@/hooks/useElevenLabsTTS";
 
 interface Message { role: "user" | "assistant"; content: string }
 
@@ -35,23 +36,33 @@ const Index = () => {
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const { toast } = useToast();
 
-  // Browser TTS
+  // ElevenLabs TTS (primary) with browser TTS fallback
   const handleTTSError = useCallback((error: string) => {
-    toast({
-      title: "Audio Error",
-      description: error,
-      variant: "destructive",
-    });
-  }, [toast]);
+    console.warn("[TTS] Error:", error);
+  }, []);
 
   const handleTTSFallback = useCallback((fromLang: string, toLang: string) => {
     console.warn("[TTS] Voice fallback:", { fromLang, toLang });
   }, []);
 
+  // ElevenLabs TTS (high quality)
   const {
-    speak,
-    stop: stopSpeaking,
-    isSpeaking,
+    speak: speakElevenLabs,
+    stop: stopElevenLabs,
+    isSpeaking: isSpeakingElevenLabs,
+    isLoading: isLoadingElevenLabs,
+  } = useElevenLabsTTS({
+    onError: (error) => {
+      console.warn("[ElevenLabs] Failed, falling back to browser TTS:", error);
+      // Fallback will be handled by speakResponse
+    },
+  });
+
+  // Browser TTS (fallback)
+  const {
+    speak: speakBrowser,
+    stop: stopBrowser,
+    isSpeaking: isSpeakingBrowser,
     isSupported: isTTSSupported,
     availableLanguages,
   } = useSpeechSynthesis({
@@ -59,6 +70,15 @@ const Index = () => {
     onError: handleTTSError,
     onFallback: handleTTSFallback,
   });
+
+  // Combined speaking state
+  const isSpeaking = isSpeakingElevenLabs || isSpeakingBrowser || isLoadingElevenLabs;
+
+  // Combined stop function
+  const stopSpeaking = useCallback(() => {
+    stopElevenLabs();
+    stopBrowser();
+  }, [stopElevenLabs, stopBrowser]);
 
   // Browser Speech-to-Text (Web Speech API)
   // Track if current input came from speech for better handling
@@ -221,11 +241,18 @@ const Index = () => {
   };
 
   // Speak function wrapper that uses ElevenLabs with browser fallback
-  const speakResponse = useCallback((text: string) => {
-    if (text && text.trim() && text.length > 20) {
-      speak(text, language);
+  const speakResponse = useCallback(async (text: string) => {
+    if (!text || !text.trim() || text.length <= 20) return;
+    
+    try {
+      // Try ElevenLabs first (high quality)
+      await speakElevenLabs(text, language);
+    } catch (error) {
+      console.warn("[TTS] ElevenLabs failed, using browser TTS:", error);
+      // Fallback to browser TTS
+      speakBrowser(text, language);
     }
-  }, [speak, language]);
+  }, [speakElevenLabs, speakBrowser, language]);
 
 
   // Helper to get auth headers
