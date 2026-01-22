@@ -54,36 +54,20 @@ const Index = () => {
   });
 
   // Browser Speech-to-Text (Web Speech API)
-  // Track if current input came from speech for better handling
   const isSpeechInputRef = useRef(false);
   
-  const handleTranscript = useCallback((text: string, isFinal: boolean) => {
-    isSpeechInputRef.current = true;
-    setInput(text);
-    console.log("[Speech] Transcript received:", { text, isFinal });
-  }, []);
-
-  const handleSpeechError = useCallback((error: string) => {
-    console.error("[Speech] Error:", error);
-    toast({
-      title: "Voice Error",
-      description: error,
-      variant: "destructive",
-    });
-  }, [toast]);
+  // Use refs to avoid stale closures in callbacks
+  const isSpeakingRef = useRef(isSpeaking);
+  const stopSpeakingRef = useRef(stopSpeaking);
   
-  const handleSpeechEnd = useCallback(() => {
-    console.log("[Speech] Session ended");
-    // Optional: auto-send if there's content and it was final
-    // For now just notify user
-    if (isSpeechInputRef.current) {
-      toast({ 
-        title: "Voice input received", 
-        description: "Tap Send or continue speaking" 
-      });
-      isSpeechInputRef.current = false;
-    }
-  }, [toast]);
+  // Keep refs in sync with current values
+  useEffect(() => {
+    isSpeakingRef.current = isSpeaking;
+  }, [isSpeaking]);
+  
+  useEffect(() => {
+    stopSpeakingRef.current = stopSpeaking;
+  }, [stopSpeaking]);
 
   // Map language codes to display names
   const getLanguageDisplayName = useCallback((langCode: string): string => {
@@ -103,14 +87,40 @@ const Index = () => {
     return languageNames[langCode] || langCode.split("-")[0].toUpperCase();
   }, []);
 
-  const handleSpeechStart = useCallback(() => {
-    // Stop TTS if it's speaking when user starts talking
-    if (isSpeaking) {
-      stopSpeaking();
+  // Stable callbacks that use refs
+  const handleTranscript = useCallback((text: string, isFinal: boolean) => {
+    isSpeechInputRef.current = true;
+    setInput(text);
+    console.log("[Speech] Transcript received:", { text, isFinal });
+  }, []);
+
+  const handleSpeechError = useCallback((error: string) => {
+    console.error("[Speech] Error:", error);
+    toast({
+      title: "Voice Error",
+      description: error,
+      variant: "destructive",
+    });
+  }, [toast]);
+  
+  const handleSpeechEnd = useCallback(() => {
+    console.log("[Speech] Session ended");
+    if (isSpeechInputRef.current) {
+      toast({ 
+        title: "Voice input received", 
+        description: "Tap Send or continue speaking" 
+      });
+      isSpeechInputRef.current = false;
     }
-    const langDisplayName = getLanguageDisplayName(language);
-    toast({ title: "Listening...", description: `Speak now in ${langDisplayName}` });
-  }, [language, toast, isSpeaking, stopSpeaking, getLanguageDisplayName]);
+  }, [toast]);
+
+  const handleSpeechStart = useCallback(() => {
+    // Stop TTS if it's speaking when user starts talking (use ref to avoid stale closure)
+    if (isSpeakingRef.current) {
+      stopSpeakingRef.current();
+    }
+    toast({ title: "Listening...", description: "Speak now" });
+  }, [toast]);
 
   const {
     isSupported: isSpeechSupported,
