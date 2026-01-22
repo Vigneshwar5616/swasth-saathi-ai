@@ -14,28 +14,22 @@ interface AudioQueueItem {
 }
 
 interface UseElevenLabsTTSReturn {
-  /** Queue a text chunk to be spoken */
   queueChunk: (text: string, language?: string) => void;
-  /** Finalize the queue - no more chunks coming */
   finalize: () => void;
-  /** Stop all audio and clear queue */
   stop: () => void;
-  /** Whether any audio is currently playing */
   isSpeaking: boolean;
-  /** Whether audio is being loaded */
   isLoading: boolean;
-  /** Reset for a new conversation */
   reset: () => void;
 }
 
-// Minimum characters to queue (to avoid too many small requests)
-const MIN_CHUNK_SIZE = 80;
-// Maximum characters per chunk
-const MAX_CHUNK_SIZE = 500;
+// Larger chunks = fewer API calls (stay under ElevenLabs 5 concurrent limit)
+const MIN_CHUNK_SIZE = 200;
+const MAX_CHUNK_SIZE = 800;
+// Max concurrent API requests (ElevenLabs limit is 5, we use 3 for safety)
+const MAX_CONCURRENT_REQUESTS = 3;
 
 /**
- * ElevenLabs TTS hook with streaming text support.
- * Queues text chunks and plays them sequentially for low latency.
+ * ElevenLabs TTS hook with streaming text support and rate limiting.
  */
 export function useElevenLabsTTS({
   onStart,
@@ -52,8 +46,9 @@ export function useElevenLabsTTS({
   const pendingTextRef = useRef("");
   const languageRef = useRef("en-IN");
   const audioUrlsRef = useRef<string[]>([]);
+  const activeRequestsRef = useRef(0);
+  const pendingFetchesRef = useRef<number[]>([]); // Queue of indices waiting to fetch
 
-  // Cleanup function for audio URLs
   const cleanupUrls = useCallback(() => {
     audioUrlsRef.current.forEach(url => {
       try { URL.revokeObjectURL(url); } catch {}
@@ -61,12 +56,27 @@ export function useElevenLabsTTS({
     audioUrlsRef.current = [];
   }, []);
 
-  // Fetch audio for a text chunk
-  const fetchAudio = useCallback(async (text: string, index: number): Promise<void> => {
+  // Process the fetch queue with rate limiting
+  const processFetchQueue = useCallback(() => {
+    while (
+      activeRequestsRef.current < MAX_CONCURRENT_REQUESTS && 
+      pendingFetchesRef.current.length > 0
+    ) {
+      const index = pendingFetchesRef.current.shift()!;
+      const item = queueRef.current[index];
+      if (item && item.status === "pending") {
+        fetchAudioInternal(item.text, index);
+      }
+    }
+  }, []);
+
+  // Internal fetch with concurrency tracking
+  const fetchAudioInternal = useCallback(async (text: string, index: number): Promise<void> => {
     const item = queueRef.current[index];
-    if (!item || item.status !== "pending") return;
+    if (!item) return;
 
     item.status = "loading";
+    activeRequestsRef.current++;
     setIsLoading(true);
 
     try {
@@ -84,6 +94,17 @@ export function useElevenLabsTTS({
       );
 
       if (!response.ok) {
+        // If rate limited, retry after delay
+        if (response.status === 429) {
+          console.warn(`[ElevenLabs] Rate limited on chunk ${index}, retrying in 2s...`);
+          item.status = "pending";
+          activeRequestsRef.current--;
+          setTimeout(() => {
+            pendingFetchesRef.current.unshift(index); // Add back to front of queue
+            processFetchQueue();
+          }, 2000);
+          return;
+        }
         throw new Error(`TTS failed: ${response.status}`);
       }
 
@@ -93,7 +114,6 @@ export function useElevenLabsTTS({
 
       const audio = new Audio(audioUrl);
       
-      // Preload the audio
       await new Promise<void>((resolve, reject) => {
         audio.oncanplaythrough = () => resolve();
         audio.onerror = () => reject(new Error("Audio load failed"));
@@ -106,23 +126,28 @@ export function useElevenLabsTTS({
       
       console.log(`[ElevenLabs] Chunk ${index} ready (${text.length} chars)`);
       
-      // Try to play if this is next in queue
       playNext();
     } catch (error: any) {
       console.error(`[ElevenLabs] Chunk ${index} failed:`, error);
       item.status = "error";
       onError?.(error.message);
-      // Skip to next chunk
-      currentIndexRef.current = index + 1;
+      currentIndexRef.current = Math.max(currentIndexRef.current, index + 1);
       playNext();
     } finally {
-      // Check if still loading any chunks
+      activeRequestsRef.current--;
       const stillLoading = queueRef.current.some(i => i.status === "loading");
-      setIsLoading(stillLoading);
+      setIsLoading(stillLoading || pendingFetchesRef.current.length > 0);
+      // Process next item in fetch queue
+      processFetchQueue();
     }
-  }, [onError]);
+  }, [onError, processFetchQueue]);
 
-  // Play the next ready audio in queue
+  // Queue a fetch request (rate limited)
+  const queueFetch = useCallback((text: string, index: number) => {
+    pendingFetchesRef.current.push(index);
+    processFetchQueue();
+  }, [processFetchQueue]);
+
   const playNext = useCallback(() => {
     if (isPlayingRef.current) return;
     
@@ -130,8 +155,7 @@ export function useElevenLabsTTS({
     const item = queueRef.current[currentIdx];
     
     if (!item) {
-      // No more items
-      if (isFinalizedRef.current) {
+      if (isFinalizedRef.current && pendingFetchesRef.current.length === 0 && activeRequestsRef.current === 0) {
         setIsSpeaking(false);
         isPlayingRef.current = false;
         onEnd?.();
@@ -170,24 +194,20 @@ export function useElevenLabsTTS({
         playNext();
       });
     } else if (item.status === "error") {
-      // Skip errored items
       currentIndexRef.current = currentIdx + 1;
       playNext();
     }
-    // If still loading/pending, wait for it to become ready
   }, [onStart, onEnd]);
 
-  // Add text to pending buffer and flush when we have enough
   const queueChunk = useCallback((text: string, language: string = "en-IN") => {
     if (!text) return;
     
     languageRef.current = language;
     pendingTextRef.current += text;
 
-    // Check if we have a complete sentence or enough text
     const pending = pendingTextRef.current;
     
-    // Look for sentence boundaries
+    // Look for sentence boundaries (with larger minimum chunks)
     const sentenceEnders = /[.!?।॥]\s*/g;
     let lastEnd = 0;
     let match;
@@ -196,54 +216,48 @@ export function useElevenLabsTTS({
       const endPos = match.index + match[0].length;
       const chunk = pending.slice(lastEnd, endPos).trim();
       
-      if (chunk.length >= MIN_CHUNK_SIZE || (lastEnd > 0 && chunk.length > 20)) {
-        // Queue this chunk
+      // Only queue if we have enough text
+      if (chunk.length >= MIN_CHUNK_SIZE) {
         const index = queueRef.current.length;
         queueRef.current.push({ text: chunk, status: "pending" });
-        console.log(`[ElevenLabs] Queued chunk ${index}: "${chunk.slice(0, 50)}..." (${chunk.length} chars)`);
-        fetchAudio(chunk, index);
+        console.log(`[ElevenLabs] Queued chunk ${index}: "${chunk.slice(0, 40)}..." (${chunk.length} chars)`);
+        queueFetch(chunk, index);
         lastEnd = endPos;
       }
     }
     
-    // Keep remaining text in buffer
     pendingTextRef.current = pending.slice(lastEnd);
     
-    // If buffer is getting too large, force flush
+    // Force flush if buffer too large
     if (pendingTextRef.current.length > MAX_CHUNK_SIZE) {
       const chunk = pendingTextRef.current.trim();
       if (chunk) {
         const index = queueRef.current.length;
         queueRef.current.push({ text: chunk, status: "pending" });
-        console.log(`[ElevenLabs] Force-queued chunk ${index}: "${chunk.slice(0, 50)}..." (${chunk.length} chars)`);
-        fetchAudio(chunk, index);
+        console.log(`[ElevenLabs] Force-queued chunk ${index}: "${chunk.slice(0, 40)}..." (${chunk.length} chars)`);
+        queueFetch(chunk, index);
       }
       pendingTextRef.current = "";
     }
-  }, [fetchAudio]);
+  }, [queueFetch]);
 
-  // Finalize - flush remaining text and mark queue as complete
   const finalize = useCallback(() => {
     const remaining = pendingTextRef.current.trim();
     if (remaining && remaining.length > 10) {
       const index = queueRef.current.length;
       queueRef.current.push({ text: remaining, status: "pending" });
-      console.log(`[ElevenLabs] Final chunk ${index}: "${remaining.slice(0, 50)}..." (${remaining.length} chars)`);
-      fetchAudio(remaining, index);
+      console.log(`[ElevenLabs] Final chunk ${index}: "${remaining.slice(0, 40)}..." (${remaining.length} chars)`);
+      queueFetch(remaining, index);
     }
     pendingTextRef.current = "";
     isFinalizedRef.current = true;
     
-    // Check if we're already done
-    if (queueRef.current.length === 0 || currentIndexRef.current >= queueRef.current.length) {
-      setIsSpeaking(false);
+    if (queueRef.current.length === 0) {
       onEnd?.();
     }
-  }, [fetchAudio, onEnd]);
+  }, [queueFetch, onEnd]);
 
-  // Stop all audio
   const stop = useCallback(() => {
-    // Stop current audio
     queueRef.current.forEach(item => {
       if (item.audio) {
         item.audio.pause();
@@ -257,11 +271,12 @@ export function useElevenLabsTTS({
     isPlayingRef.current = false;
     isFinalizedRef.current = false;
     pendingTextRef.current = "";
+    activeRequestsRef.current = 0;
+    pendingFetchesRef.current = [];
     setIsSpeaking(false);
     setIsLoading(false);
   }, [cleanupUrls]);
 
-  // Reset for new conversation
   const reset = useCallback(() => {
     stop();
   }, [stop]);
