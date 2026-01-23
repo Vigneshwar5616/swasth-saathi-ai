@@ -85,7 +85,7 @@ export function DashboardHeader({ searchQuery, onSearchChange, onSearchSelect }:
           return;
         }
         
-        const resp = await fetch("https://tknpmvtfccepvwegcnfz.supabase.co/functions/v1/health-search", {
+        const resp = await fetch(`${import.meta.env.VITE_SUPABASE_URL}/functions/v1/health-search`, {
           method: "POST",
           headers: { 
             "Content-Type": "application/json",
