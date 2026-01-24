@@ -238,6 +238,10 @@ export function useBrowserSpeechRecognition({
   }, [createRecognition, isConnecting, isListening, isSupported, languageCode]);
 
   const stop = useCallback(() => {
+    // Clear transcript first to prevent stale final callback
+    transcriptRef.current = "";
+    clearSilenceTimeout();
+    
     if (recognitionRef.current) {
       try {
         recognitionRef.current.stop();
@@ -247,7 +251,7 @@ export function useBrowserSpeechRecognition({
     }
     setIsConnecting(false);
     setIsListening(false);
-  }, []);
+  }, [clearSilenceTimeout]);
 
   // Cleanup on unmount
   useEffect(() => {

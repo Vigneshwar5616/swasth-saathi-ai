@@ -31,6 +31,8 @@ const Index = () => {
   
   const [searchQuery, setSearchQuery] = useState("");
   
+  // Flag to prevent speech input from updating after send
+  const messageSentRef = useRef(false);
   const chatContainerRef = useRef<HTMLDivElement>(null);
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const { toast } = useToast();
@@ -89,6 +91,11 @@ const Index = () => {
 
   // Stable callbacks that use refs
   const handleTranscript = useCallback((text: string, isFinal: boolean) => {
+    // Don't update input if message was just sent
+    if (messageSentRef.current) {
+      console.log("[Speech] Ignoring transcript after send");
+      return;
+    }
     isSpeechInputRef.current = true;
     setInput(text);
     console.log("[Speech] Transcript received:", { text, isFinal });
@@ -316,6 +323,9 @@ const Index = () => {
       stopSpeech();
     }
     
+    // Set flag to prevent late transcript callbacks from re-populating input
+    messageSentRef.current = true;
+    
     // Reset TTS for new message
     resetTTS();
     
@@ -325,6 +335,11 @@ const Index = () => {
     setMessages(next);
     setInput("");
     setLoading(true);
+    
+    // Reset the flag after a short delay to allow new speech input
+    setTimeout(() => {
+      messageSentRef.current = false;
+    }, 500);
     
     let assistantContent = "";
     
