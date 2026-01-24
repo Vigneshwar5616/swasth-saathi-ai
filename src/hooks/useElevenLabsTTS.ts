@@ -1,6 +1,6 @@
 import { useCallback, useRef, useState, useEffect } from "react";
 import { getGlobalAudioContext } from "@/components/chat/AudioPermissionRequest";
-
+import { supabase } from "@/integrations/supabase/client";
 interface UseElevenLabsTTSOptions {
   onStart?: () => void;
   onEnd?: () => void;
@@ -156,6 +156,13 @@ export function useElevenLabsTTS({
     setIsLoading(true);
 
     try {
+      // Get the user's actual session token for authentication
+      const { data: { session } } = await supabase.auth.getSession();
+      
+      if (!session?.access_token) {
+        throw new Error("Not authenticated - please log in to use voice features");
+      }
+
       const response = await fetch(
         `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/elevenlabs-tts`,
         {
@@ -163,7 +170,7 @@ export function useElevenLabsTTS({
           headers: {
             "Content-Type": "application/json",
             "apikey": import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY,
-            "Authorization": `Bearer ${import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY}`,
+            "Authorization": `Bearer ${session.access_token}`,
           },
           body: JSON.stringify({ text, language: languageRef.current }),
         }
