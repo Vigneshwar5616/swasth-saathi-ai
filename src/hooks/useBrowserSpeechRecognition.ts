@@ -56,8 +56,8 @@ export function useBrowserSpeechRecognition({
   const silenceTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const stoppedManuallyRef = useRef(false); // Track if stopped manually (to skip final callback)
   
-  // Silence timeout duration (15 seconds)
-  const SILENCE_TIMEOUT_MS = 15000;
+  // Silence timeout duration (25 seconds - gives time to think)
+  const SILENCE_TIMEOUT_MS = 25000;
 
   // Callback refs for stable references
   const onTranscriptRef = useRef(onTranscript);
