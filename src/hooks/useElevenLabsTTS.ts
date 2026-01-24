@@ -37,13 +37,24 @@ const isIOS = (): boolean => {
     (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
 };
 
+// Detect Android
+const isAndroid = (): boolean => {
+  if (typeof window === "undefined") return false;
+  return /android/i.test(navigator.userAgent);
+};
+
+// Check if we need to unlock audio (iOS and Android both require it)
+const needsAudioUnlock = (): boolean => {
+  return isIOS() || isAndroid();
+};
+
 /**
- * Create an iOS-compatible audio element with required attributes
+ * Create a mobile-compatible audio element with required attributes
  */
-const createIOSCompatibleAudio = (url: string): HTMLAudioElement => {
+const createMobileCompatibleAudio = (url: string): HTMLAudioElement => {
   const audio = new Audio();
   
-  // Critical iOS attributes
+  // Critical mobile attributes for iOS and Android
   audio.setAttribute("playsinline", "true");
   audio.setAttribute("webkit-playsinline", "true");
   audio.preload = "auto";
@@ -59,11 +70,11 @@ const createIOSCompatibleAudio = (url: string): HTMLAudioElement => {
 };
 
 /**
- * Unlock audio on iOS by playing a silent buffer
+ * Unlock audio on mobile by playing a silent buffer
  * Must be called from a user gesture handler
  */
-const unlockIOSAudio = async (): Promise<void> => {
-  if (!isIOS()) return;
+const unlockMobileAudio = async (): Promise<void> => {
+  if (!needsAudioUnlock()) return;
   
   try {
     // Try to use existing global AudioContext
@@ -73,15 +84,16 @@ const unlockIOSAudio = async (): Promise<void> => {
     }
     
     // Also create a silent Audio element to unlock HTML5 audio
-    const silentAudio = createIOSCompatibleAudio(
+    const silentAudio = createMobileCompatibleAudio(
       "data:audio/mp3;base64,SUQzBAAAAAAAI1RTU0UAAAAPAAADTGF2ZjU4Ljc2LjEwMAAAAAAAAAAAAAAA//tQAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAWGluZwAAAA8AAAACAAABhgC7u7u7u7u7u7u7u7u7u7u7u7u7u7u7u7u7u7u7u7u7u7u7u7u7u7u7u7u7u7u7u7u7u7u7//////////////////////////////////////////////////////////////////8AAAAATGF2YzU4LjEzAAAAAAAAAAAAAAAAJAAAAAAAAAAAAYYmZ3BCAAAAAAAAAAAAAAAAAAAA//tQZAAP8AAAaQAAAAgAAA0gAAABAAABpAAAACAAADSAAAAETEFNRTMuMTAwVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVQ=="
     );
     silentAudio.volume = 0.01;
     await silentAudio.play();
     silentAudio.pause();
     silentAudio.src = "";
+    console.log("[Mobile] Audio unlocked successfully");
   } catch (e) {
-    console.log("[iOS] Audio unlock attempt:", e);
+    console.log("[Mobile] Audio unlock attempt:", e);
   }
 };
 
@@ -106,14 +118,14 @@ export function useElevenLabsTTS({
   const audioUrlsRef = useRef<string[]>([]);
   const activeRequestsRef = useRef(0);
   const pendingFetchesRef = useRef<number[]>([]); // Queue of indices waiting to fetch
-  const iosUnlockedRef = useRef(false);
+  const mobileUnlockedRef = useRef(false);
   const preloadedAudioRef = useRef<HTMLAudioElement | null>(null);
 
-  // On iOS, pre-create an audio element that can be reused
+  // On mobile, pre-create an audio element that can be reused
   // This helps maintain the user gesture chain
   useEffect(() => {
-    if (isIOS() && !preloadedAudioRef.current) {
-      preloadedAudioRef.current = createIOSCompatibleAudio("");
+    if (needsAudioUnlock() && !preloadedAudioRef.current) {
+      preloadedAudioRef.current = createMobileCompatibleAudio("");
     }
     
     return () => {
@@ -195,8 +207,8 @@ export function useElevenLabsTTS({
       const audioUrl = URL.createObjectURL(blob);
       audioUrlsRef.current.push(audioUrl);
 
-      // Create iOS-compatible audio element
-      const audio = createIOSCompatibleAudio(audioUrl);
+      // Create mobile-compatible audio element
+      const audio = createMobileCompatibleAudio(audioUrl);
       
       await new Promise<void>((resolve, reject) => {
         const timeoutId = setTimeout(() => {
@@ -285,7 +297,7 @@ export function useElevenLabsTTS({
         playNext();
       };
 
-      // iOS-specific: ensure AudioContext is resumed
+      // Mobile: ensure AudioContext is resumed
       const audioCtx = getGlobalAudioContext();
       if (audioCtx && audioCtx.state === "suspended") {
         audioCtx.resume().catch(() => {});
@@ -294,16 +306,16 @@ export function useElevenLabsTTS({
       audio.play().catch(err => {
         console.error("[ElevenLabs] Play error:", err);
         
-        // On iOS, if play fails, try one more time after a short delay
-        if (isIOS()) {
-          console.log("[ElevenLabs] iOS play failed, retrying...");
+        // On mobile (iOS/Android), if play fails, try one more time after a short delay
+        if (needsAudioUnlock()) {
+          console.log("[ElevenLabs] Mobile play failed, retrying...");
           setTimeout(() => {
             audio.play().catch(retryErr => {
-              console.error("[ElevenLabs] iOS retry failed:", retryErr);
+              console.error("[ElevenLabs] Mobile retry failed:", retryErr);
               item.status = "error";
               isPlayingRef.current = false;
               currentIndexRef.current = currentIdx + 1;
-              onError?.("Audio playback blocked on iOS. Please tap the screen and try again.");
+              onError?.("Audio playback blocked. Please tap the screen and try again.");
               playNext();
             });
           }, 100);
@@ -323,10 +335,10 @@ export function useElevenLabsTTS({
   const queueChunk = useCallback((text: string, language: string = "en-IN") => {
     if (!text) return;
     
-    // Unlock iOS audio on first chunk (this should be called from user gesture context)
-    if (isIOS() && !iosUnlockedRef.current) {
-      unlockIOSAudio();
-      iosUnlockedRef.current = true;
+    // Unlock mobile audio on first chunk (this should be called from user gesture context)
+    if (needsAudioUnlock() && !mobileUnlockedRef.current) {
+      unlockMobileAudio();
+      mobileUnlockedRef.current = true;
     }
     
     languageRef.current = language;
@@ -406,7 +418,7 @@ export function useElevenLabsTTS({
 
   const reset = useCallback(() => {
     stop();
-    iosUnlockedRef.current = false;
+    mobileUnlockedRef.current = false;
   }, [stop]);
 
   return {
