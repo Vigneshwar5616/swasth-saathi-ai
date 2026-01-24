@@ -1,4 +1,4 @@
-import "jsr:@supabase/functions-js/edge-runtime.d.ts";
+import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2.49.1";
 
 // Allowed origins for CORS - restrict to known domains
@@ -140,7 +140,7 @@ function validateRequestBody(body: unknown): {
   return { valid: true, query: sanitizedQuery };
 }
 
-Deno.serve(async (req) => {
+serve(async (req) => {
   const origin = req.headers.get('origin');
   const corsHeaders = getCorsHeaders(origin);
   
