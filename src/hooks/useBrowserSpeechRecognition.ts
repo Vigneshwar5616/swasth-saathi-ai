@@ -33,7 +33,7 @@ function mapSpeechError(e: any): string {
 
 /**
  * Simple Speech-to-Text using Web Speech API.
- * Standard chatbot behavior: tap to start, speak, auto-stops when you pause.
+ * Standard chatbot behavior: tap to start, speak, tap send when done.
  */
 export function useBrowserSpeechRecognition({
   onTranscript,
@@ -52,11 +52,12 @@ export function useBrowserSpeechRecognition({
 
   // Refs
   const recognitionRef = useRef<SpeechRecognition | null>(null);
-  const transcriptRef = useRef<string>("");
+  const accumulatedFinalRef = useRef<string>(""); // Accumulated final transcript parts
   const silenceTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const stoppedManuallyRef = useRef(false); // Track if stopped manually (to skip final callback)
   
-  // Silence timeout duration (60 seconds for longer input)
-  const SILENCE_TIMEOUT_MS = 60000;
+  // Silence timeout duration (15 seconds)
+  const SILENCE_TIMEOUT_MS = 15000;
 
   // Callback refs for stable references
   const onTranscriptRef = useRef(onTranscript);
@@ -107,27 +108,28 @@ export function useBrowserSpeechRecognition({
     const recognition = new RecognitionCtor();
     recognition.interimResults = true;
     recognition.maxAlternatives = 1;
-    // Continuous mode: keeps listening until manually stopped or timeout
-    (recognition as any).continuous = true;
+    // Non-continuous mode for cleaner results (stops after pause)
+    (recognition as any).continuous = false;
 
     (recognition as any).onstart = () => {
       console.log("[Speech] Started");
       setIsConnecting(false);
       setIsListening(true);
-      transcriptRef.current = "";
+      accumulatedFinalRef.current = "";
+      stoppedManuallyRef.current = false;
       resetSilenceTimeout();
       onStartRef.current?.();
     };
 
     (recognition as any).onend = () => {
-      console.log("[Speech] Ended");
+      console.log("[Speech] Ended, stoppedManually:", stoppedManuallyRef.current);
       clearSilenceTimeout();
       setIsConnecting(false);
       setIsListening(false);
       
-      // Emit final transcript if we have one
-      if (transcriptRef.current) {
-        onTranscriptRef.current(transcriptRef.current, true);
+      // Only emit final transcript if not stopped manually (to prevent duplicates)
+      if (!stoppedManuallyRef.current && accumulatedFinalRef.current) {
+        onTranscriptRef.current(accumulatedFinalRef.current, true);
       }
       
       onEndRef.current?.();
@@ -137,27 +139,29 @@ export function useBrowserSpeechRecognition({
       // Reset silence timeout on any speech activity
       resetSilenceTimeout();
       
-      let finalTranscript = "";
-      let interimTranscript = "";
+      // Build transcript from results
+      // In non-continuous mode, results don't accumulate across sessions
+      let finalText = "";
+      let interimText = "";
 
       for (let i = 0; i < event.results.length; i++) {
         const result = event.results[i];
         const text = result[0]?.transcript || "";
         
         if (result.isFinal) {
-          finalTranscript += text;
+          finalText += text;
         } else {
-          interimTranscript += text;
+          interimText += text;
         }
       }
 
-      // Update stored transcript (accumulate final results)
-      if (finalTranscript) {
-        transcriptRef.current = finalTranscript.trim();
+      // Store final transcript for the onend callback
+      if (finalText) {
+        accumulatedFinalRef.current = finalText.trim();
       }
 
-      // Show current state (final + interim) in real-time
-      const display = (finalTranscript + interimTranscript).trim();
+      // Display current state (final + interim) for real-time feedback
+      const display = (finalText + interimText).trim();
       if (display) {
         onTranscriptRef.current(display, false);
       }
@@ -193,6 +197,7 @@ export function useBrowserSpeechRecognition({
     // If already active, stop it
     if (isListening || isConnecting) {
       if (recognitionRef.current) {
+        stoppedManuallyRef.current = true;
         try {
           recognitionRef.current.stop();
         } catch {
@@ -205,7 +210,11 @@ export function useBrowserSpeechRecognition({
     // Request mic permission
     try {
       const stream = await navigator.mediaDevices.getUserMedia({ 
-        audio: { echoCancellation: true, noiseSuppression: true }
+        audio: { 
+          echoCancellation: true, 
+          noiseSuppression: true,
+          autoGainControl: true,
+        }
       });
       stream.getTracks().forEach(track => track.stop());
     } catch (error: any) {
@@ -224,7 +233,8 @@ export function useBrowserSpeechRecognition({
     }
 
     recognition.lang = languageCode || "en-IN";
-    transcriptRef.current = "";
+    accumulatedFinalRef.current = "";
+    stoppedManuallyRef.current = false;
 
     try {
       setIsConnecting(true);
@@ -238,8 +248,8 @@ export function useBrowserSpeechRecognition({
   }, [createRecognition, isConnecting, isListening, isSupported, languageCode]);
 
   const stop = useCallback(() => {
-    // Clear transcript first to prevent stale final callback
-    transcriptRef.current = "";
+    // Mark as manually stopped to prevent duplicate transcript emission
+    stoppedManuallyRef.current = true;
     clearSilenceTimeout();
     
     if (recognitionRef.current) {

@@ -96,9 +96,13 @@ const Index = () => {
       console.log("[Speech] Ignoring transcript after send");
       return;
     }
-    isSpeechInputRef.current = true;
-    setInput(text);
-    console.log("[Speech] Transcript received:", { text, isFinal });
+    
+    // Only update if we have actual text
+    if (text && text.trim()) {
+      isSpeechInputRef.current = true;
+      setInput(text);
+      console.log("[Speech] Transcript received:", { text: text.slice(0, 50), isFinal });
+    }
   }, []);
 
   const handleSpeechError = useCallback((error: string) => {
@@ -112,13 +116,14 @@ const Index = () => {
   
   const handleSpeechEnd = useCallback(() => {
     console.log("[Speech] Session ended");
-    if (isSpeechInputRef.current) {
+    // Only show toast if we had speech input and message wasn't just sent
+    if (isSpeechInputRef.current && !messageSentRef.current) {
       toast({ 
         title: "Voice input received", 
-        description: "Tap Send or continue speaking" 
+        description: "Tap Send to submit your message" 
       });
-      isSpeechInputRef.current = false;
     }
+    isSpeechInputRef.current = false;
   }, [toast]);
 
   const handleSpeechStart = useCallback(() => {
