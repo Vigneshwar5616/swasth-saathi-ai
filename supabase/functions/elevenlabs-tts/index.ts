@@ -139,18 +139,18 @@ serve(async (req) => {
       global: { headers: { Authorization: authHeader } }
     });
 
-    const token = authHeader.replace('Bearer ', '');
-    const { data: claimsData, error: claimsError } = await supabase.auth.getClaims(token);
+    // Validate the token by getting the user
+    const { data: userData, error: userError } = await supabase.auth.getUser();
     
-    if (claimsError || !claimsData?.claims?.sub) {
-      console.log("[ElevenLabs TTS] Unauthorized: Invalid or expired token");
+    if (userError || !userData?.user?.id) {
+      console.log("[ElevenLabs TTS] Unauthorized: Invalid or expired token", userError?.message);
       return new Response(
         JSON.stringify({ error: "Invalid or expired authentication token" }),
         { status: 401, headers: { ...corsHeaders, "Content-Type": "application/json" } }
       );
     }
 
-    const userId = claimsData.claims.sub;
+    const userId = userData.user.id;
     console.log(`[ElevenLabs TTS] Authenticated user: ${userId}`);
 
     // Apply rate limiting per user
