@@ -28,7 +28,7 @@ function getCorsHeaders(origin: string | null) {
 const VOICE_MAP: Record<string, string> = {
   // Female voices that work well for Indian languages
   "hi-IN": "EXAVITQu4vr4xnSDxMaL", // Sarah - good for Hindi
-  "te-IN": "EXAVITQu4vr4xnSDxMaL", // Sarah
+  "te-IN": "14lx5SWXG46Ebq1PVnN6", // Custom Telugu voice
   "ta-IN": "EXAVITQu4vr4xnSDxMaL", // Sarah
   "kn-IN": "EXAVITQu4vr4xnSDxMaL", // Sarah
   "ml-IN": "EXAVITQu4vr4xnSDxMaL", // Sarah
