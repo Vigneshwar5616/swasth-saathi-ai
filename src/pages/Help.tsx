@@ -91,7 +91,7 @@ const Help = () => {
   };
 
   return (
-    <div className="flex min-h-screen max-h-screen w-full overflow-hidden">
+    <div className="flex h-full w-full overflow-hidden">
       <AppSidebar />
       
       <div className="flex-1 flex flex-col min-h-0 overflow-hidden">
