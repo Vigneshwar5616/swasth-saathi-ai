@@ -1,5 +1,6 @@
 import "https://deno.land/x/xhr@0.1.0/mod.ts";
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
+import { createClient } from "https://esm.sh/@supabase/supabase-js@2.49.1";
 
 // Allowed origins for CORS - prevents unauthorized API usage
 const ALLOWED_ORIGINS = [
@@ -11,6 +12,13 @@ const ALLOWED_ORIGINS = [
   'http://localhost:3000',
 ];
 
+// Rate limiting configuration
+const RATE_LIMIT_WINDOW_MS = 60 * 1000; // 1 minute
+const AUTHENTICATED_RATE_LIMIT = 30; // 30 TTS requests per minute for authenticated users
+
+// In-memory rate limit store (resets on function cold start)
+const rateLimitStore = new Map<string, { count: number; resetAt: number }>();
+
 function getCorsHeaders(origin: string | null) {
   const isAllowed = origin && (
     ALLOWED_ORIGINS.includes(origin) ||
@@ -21,7 +29,27 @@ function getCorsHeaders(origin: string | null) {
   return {
     'Access-Control-Allow-Origin': isAllowed ? origin : ALLOWED_ORIGINS[0],
     'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
+    'Access-Control-Allow-Methods': 'POST, OPTIONS',
   };
+}
+
+function checkRateLimit(key: string, limit: number): { allowed: boolean; remaining: number; resetAt: number } {
+  const now = Date.now();
+  const record = rateLimitStore.get(key);
+  
+  if (!record || now > record.resetAt) {
+    const resetAt = now + RATE_LIMIT_WINDOW_MS;
+    rateLimitStore.set(key, { count: 1, resetAt });
+    return { allowed: true, remaining: limit - 1, resetAt };
+  }
+  
+  if (record.count >= limit) {
+    return { allowed: false, remaining: 0, resetAt: record.resetAt };
+  }
+  
+  record.count++;
+  rateLimitStore.set(key, record);
+  return { allowed: true, remaining: limit - record.count, resetAt: record.resetAt };
 }
 
 // Voice mapping for Indian languages - ElevenLabs multilingual voices
@@ -64,6 +92,9 @@ const getElevenLabsLanguage = (langCode: string): string => {
   return langMap[langCode] || "en";
 };
 
+// Input validation limits
+const MAX_TEXT_LENGTH = 5000;
+
 serve(async (req) => {
   const origin = req.headers.get('origin');
   const corsHeaders = getCorsHeaders(origin);
@@ -73,22 +104,127 @@ serve(async (req) => {
     return new Response(null, { headers: corsHeaders });
   }
 
+  // Only allow POST requests
+  if (req.method !== "POST") {
+    return new Response(
+      JSON.stringify({ error: "Method not allowed" }),
+      { status: 405, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+    );
+  }
+
   try {
+    // Authentication check - REQUIRED for TTS to protect API quota
+    const authHeader = req.headers.get('authorization');
+    if (!authHeader?.startsWith('Bearer ')) {
+      console.log("[ElevenLabs TTS] Unauthorized: No valid authorization header");
+      return new Response(
+        JSON.stringify({ error: "Authentication required" }),
+        { status: 401, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+      );
+    }
+
+    // Validate JWT token
+    const supabaseUrl = Deno.env.get('SUPABASE_URL');
+    const supabaseAnonKey = Deno.env.get('SUPABASE_ANON_KEY');
+    
+    if (!supabaseUrl || !supabaseAnonKey) {
+      console.error("[ElevenLabs TTS] Supabase configuration missing");
+      return new Response(
+        JSON.stringify({ error: "Service configuration error" }),
+        { status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+      );
+    }
+
+    const supabase = createClient(supabaseUrl, supabaseAnonKey, {
+      global: { headers: { Authorization: authHeader } }
+    });
+
+    const token = authHeader.replace('Bearer ', '');
+    const { data: claimsData, error: claimsError } = await supabase.auth.getClaims(token);
+    
+    if (claimsError || !claimsData?.claims?.sub) {
+      console.log("[ElevenLabs TTS] Unauthorized: Invalid or expired token");
+      return new Response(
+        JSON.stringify({ error: "Invalid or expired authentication token" }),
+        { status: 401, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+      );
+    }
+
+    const userId = claimsData.claims.sub;
+    console.log(`[ElevenLabs TTS] Authenticated user: ${userId}`);
+
+    // Apply rate limiting per user
+    const rateLimitKey = `tts:user:${userId}`;
+    const rateLimitResult = checkRateLimit(rateLimitKey, AUTHENTICATED_RATE_LIMIT);
+    
+    if (!rateLimitResult.allowed) {
+      console.log(`[ElevenLabs TTS] Rate limit exceeded for user: ${userId}`);
+      return new Response(
+        JSON.stringify({ 
+          error: "Rate limit exceeded. Please try again later.", 
+          retryAfter: Math.ceil((rateLimitResult.resetAt - Date.now()) / 1000) 
+        }),
+        { 
+          status: 429, 
+          headers: { 
+            ...corsHeaders, 
+            "Content-Type": "application/json",
+            "Retry-After": String(Math.ceil((rateLimitResult.resetAt - Date.now()) / 1000))
+          } 
+        }
+      );
+    }
+
+    console.log(`[ElevenLabs TTS] Rate limit check passed. Remaining: ${rateLimitResult.remaining}`);
+
     const ELEVENLABS_API_KEY = Deno.env.get("ELEVENLABS_API_KEY");
     
     if (!ELEVENLABS_API_KEY) {
-      console.error("ELEVENLABS_API_KEY not configured");
+      console.error("[ElevenLabs TTS] ELEVENLABS_API_KEY not configured");
       return new Response(
         JSON.stringify({ error: "TTS service not configured" }),
         { status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" } }
       );
     }
 
-    const { text, language = "en-IN" } = await req.json();
+    // Parse and validate request body
+    let body: unknown;
+    try {
+      body = await req.json();
+    } catch {
+      return new Response(
+        JSON.stringify({ error: "Invalid JSON body" }),
+        { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+      );
+    }
+
+    if (!body || typeof body !== 'object') {
+      return new Response(
+        JSON.stringify({ error: "Invalid request body" }),
+        { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+      );
+    }
+
+    const { text, language = "en-IN" } = body as { text?: string; language?: string };
 
     if (!text || typeof text !== "string" || text.trim().length === 0) {
       return new Response(
-        JSON.stringify({ error: "Text is required" }),
+        JSON.stringify({ error: "Text is required and must be a non-empty string" }),
+        { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+      );
+    }
+
+    if (text.length > MAX_TEXT_LENGTH) {
+      return new Response(
+        JSON.stringify({ error: `Text exceeds maximum length of ${MAX_TEXT_LENGTH} characters` }),
+        { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+      );
+    }
+
+    // Validate language parameter
+    if (typeof language !== 'string' || language.length > 10) {
+      return new Response(
+        JSON.stringify({ error: "Invalid language parameter" }),
         { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } }
       );
     }
@@ -139,7 +275,7 @@ serve(async (req) => {
     }
 
     const audioBuffer = await response.arrayBuffer();
-    console.log(`[ElevenLabs TTS] Generated ${audioBuffer.byteLength} bytes of audio`);
+    console.log(`[ElevenLabs TTS] Generated ${audioBuffer.byteLength} bytes of audio for user: ${userId}`);
 
     return new Response(audioBuffer, {
       headers: {
