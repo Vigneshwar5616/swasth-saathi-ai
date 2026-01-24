@@ -53,6 +53,10 @@ export function useBrowserSpeechRecognition({
   // Refs
   const recognitionRef = useRef<SpeechRecognition | null>(null);
   const transcriptRef = useRef<string>("");
+  const silenceTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  
+  // Silence timeout duration (60 seconds for longer input)
+  const SILENCE_TIMEOUT_MS = 60000;
 
   // Callback refs for stable references
   const onTranscriptRef = useRef(onTranscript);
@@ -66,6 +70,27 @@ export function useBrowserSpeechRecognition({
     onStartRef.current = onStart;
     onEndRef.current = onEnd;
   }, [onTranscript, onError, onStart, onEnd]);
+
+  const clearSilenceTimeout = useCallback(() => {
+    if (silenceTimeoutRef.current) {
+      clearTimeout(silenceTimeoutRef.current);
+      silenceTimeoutRef.current = null;
+    }
+  }, []);
+
+  const resetSilenceTimeout = useCallback(() => {
+    clearSilenceTimeout();
+    silenceTimeoutRef.current = setTimeout(() => {
+      console.log("[Speech] Silence timeout - stopping");
+      if (recognitionRef.current) {
+        try {
+          recognitionRef.current.stop();
+        } catch {
+          // Ignore
+        }
+      }
+    }, SILENCE_TIMEOUT_MS);
+  }, [clearSilenceTimeout]);
 
   const createRecognition = useCallback(() => {
     if (!RecognitionCtor) return null;
@@ -82,19 +107,21 @@ export function useBrowserSpeechRecognition({
     const recognition = new RecognitionCtor();
     recognition.interimResults = true;
     recognition.maxAlternatives = 1;
-    // Non-continuous: stops automatically after speech ends
-    (recognition as any).continuous = false;
+    // Continuous mode: keeps listening until manually stopped or timeout
+    (recognition as any).continuous = true;
 
     (recognition as any).onstart = () => {
       console.log("[Speech] Started");
       setIsConnecting(false);
       setIsListening(true);
       transcriptRef.current = "";
+      resetSilenceTimeout();
       onStartRef.current?.();
     };
 
     (recognition as any).onend = () => {
       console.log("[Speech] Ended");
+      clearSilenceTimeout();
       setIsConnecting(false);
       setIsListening(false);
       
@@ -107,6 +134,9 @@ export function useBrowserSpeechRecognition({
     };
 
     recognition.onresult = (event: SpeechRecognitionEvent) => {
+      // Reset silence timeout on any speech activity
+      resetSilenceTimeout();
+      
       let finalTranscript = "";
       let interimTranscript = "";
 
@@ -121,7 +151,7 @@ export function useBrowserSpeechRecognition({
         }
       }
 
-      // Update stored transcript
+      // Update stored transcript (accumulate final results)
       if (finalTranscript) {
         transcriptRef.current = finalTranscript.trim();
       }
@@ -135,6 +165,7 @@ export function useBrowserSpeechRecognition({
 
     recognition.onerror = (event: any) => {
       console.error("[Speech] Error:", event.error);
+      clearSilenceTimeout();
       
       // Ignore no-speech as it's normal when user doesn't speak
       if (event.error === "no-speech") {
@@ -151,7 +182,7 @@ export function useBrowserSpeechRecognition({
 
     recognitionRef.current = recognition;
     return recognition;
-  }, [RecognitionCtor]);
+  }, [RecognitionCtor, resetSilenceTimeout, clearSilenceTimeout]);
 
   const start = useCallback(async () => {
     if (!isSupported) {
@@ -221,6 +252,7 @@ export function useBrowserSpeechRecognition({
   // Cleanup on unmount
   useEffect(() => {
     return () => {
+      clearSilenceTimeout();
       if (recognitionRef.current) {
         try {
           (recognitionRef.current as any).abort?.() || recognitionRef.current.stop();
@@ -229,7 +261,7 @@ export function useBrowserSpeechRecognition({
         }
       }
     };
-  }, []);
+  }, [clearSilenceTimeout]);
 
   return {
     isSupported,
