@@ -54,6 +54,7 @@ export type Database = {
           id: string
           language: string | null
           updated_at: string
+          user_id: string | null
           user_message: string
         }
         Insert: {
@@ -62,6 +63,7 @@ export type Database = {
           id?: string
           language?: string | null
           updated_at?: string
+          user_id?: string | null
           user_message: string
         }
         Update: {
@@ -70,6 +72,7 @@ export type Database = {
           id?: string
           language?: string | null
           updated_at?: string
+          user_id?: string | null
           user_message?: string
         }
         Relationships: []
@@ -235,6 +238,15 @@ export type Database = {
             Args: {
               p_assistant_message: string
               p_language?: string
+              p_user_message: string
+            }
+            Returns: string
+          }
+        | {
+            Args: {
+              p_assistant_message: string
+              p_language?: string
+              p_user_id?: string
               p_user_message: string
             }
             Returns: string
