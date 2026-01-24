@@ -1,4 +1,5 @@
-import { useCallback, useRef, useState } from "react";
+import { useCallback, useRef, useState, useEffect } from "react";
+import { getGlobalAudioContext } from "@/components/chat/AudioPermissionRequest";
 
 interface UseElevenLabsTTSOptions {
   onStart?: () => void;
@@ -28,8 +29,65 @@ const MAX_CHUNK_SIZE = 800;
 // Max concurrent API requests (ElevenLabs limit is 5, we use 3 for safety)
 const MAX_CONCURRENT_REQUESTS = 3;
 
+// Detect iOS
+const isIOS = (): boolean => {
+  if (typeof window === "undefined") return false;
+  const ua = navigator.userAgent.toLowerCase();
+  return /iphone|ipad|ipod/.test(ua) || 
+    (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
+};
+
+/**
+ * Create an iOS-compatible audio element with required attributes
+ */
+const createIOSCompatibleAudio = (url: string): HTMLAudioElement => {
+  const audio = new Audio();
+  
+  // Critical iOS attributes
+  audio.setAttribute("playsinline", "true");
+  audio.setAttribute("webkit-playsinline", "true");
+  audio.preload = "auto";
+  
+  // Set crossOrigin for blob URLs isn't needed, but helps with other sources
+  if (!url.startsWith("blob:")) {
+    audio.crossOrigin = "anonymous";
+  }
+  
+  audio.src = url;
+  
+  return audio;
+};
+
+/**
+ * Unlock audio on iOS by playing a silent buffer
+ * Must be called from a user gesture handler
+ */
+const unlockIOSAudio = async (): Promise<void> => {
+  if (!isIOS()) return;
+  
+  try {
+    // Try to use existing global AudioContext
+    const audioCtx = getGlobalAudioContext();
+    if (audioCtx && audioCtx.state === "suspended") {
+      await audioCtx.resume();
+    }
+    
+    // Also create a silent Audio element to unlock HTML5 audio
+    const silentAudio = createIOSCompatibleAudio(
+      "data:audio/mp3;base64,SUQzBAAAAAAAI1RTU0UAAAAPAAADTGF2ZjU4Ljc2LjEwMAAAAAAAAAAAAAAA//tQAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAWGluZwAAAA8AAAACAAABhgC7u7u7u7u7u7u7u7u7u7u7u7u7u7u7u7u7u7u7u7u7u7u7u7u7u7u7u7u7u7u7u7u7u7u7//////////////////////////////////////////////////////////////////8AAAAATGF2YzU4LjEzAAAAAAAAAAAAAAAAJAAAAAAAAAAAAYYmZ3BCAAAAAAAAAAAAAAAAAAAA//tQZAAP8AAAaQAAAAgAAA0gAAABAAABpAAAACAAADSAAAAETEFNRTMuMTAwVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVQ=="
+    );
+    silentAudio.volume = 0.01;
+    await silentAudio.play();
+    silentAudio.pause();
+    silentAudio.src = "";
+  } catch (e) {
+    console.log("[iOS] Audio unlock attempt:", e);
+  }
+};
+
 /**
  * ElevenLabs TTS hook with streaming text support and rate limiting.
+ * Includes iOS Safari audio playback fixes.
  */
 export function useElevenLabsTTS({
   onStart,
@@ -48,6 +106,24 @@ export function useElevenLabsTTS({
   const audioUrlsRef = useRef<string[]>([]);
   const activeRequestsRef = useRef(0);
   const pendingFetchesRef = useRef<number[]>([]); // Queue of indices waiting to fetch
+  const iosUnlockedRef = useRef(false);
+  const preloadedAudioRef = useRef<HTMLAudioElement | null>(null);
+
+  // On iOS, pre-create an audio element that can be reused
+  // This helps maintain the user gesture chain
+  useEffect(() => {
+    if (isIOS() && !preloadedAudioRef.current) {
+      preloadedAudioRef.current = createIOSCompatibleAudio("");
+    }
+    
+    return () => {
+      if (preloadedAudioRef.current) {
+        preloadedAudioRef.current.pause();
+        preloadedAudioRef.current.src = "";
+        preloadedAudioRef.current = null;
+      }
+    };
+  }, []);
 
   const cleanupUrls = useCallback(() => {
     audioUrlsRef.current.forEach(url => {
@@ -112,11 +188,24 @@ export function useElevenLabsTTS({
       const audioUrl = URL.createObjectURL(blob);
       audioUrlsRef.current.push(audioUrl);
 
-      const audio = new Audio(audioUrl);
+      // Create iOS-compatible audio element
+      const audio = createIOSCompatibleAudio(audioUrl);
       
       await new Promise<void>((resolve, reject) => {
-        audio.oncanplaythrough = () => resolve();
-        audio.onerror = () => reject(new Error("Audio load failed"));
+        const timeoutId = setTimeout(() => {
+          console.warn(`[ElevenLabs] Audio load timeout for chunk ${index}`);
+          resolve(); // Resolve anyway, we'll try to play
+        }, 5000);
+        
+        audio.oncanplaythrough = () => {
+          clearTimeout(timeoutId);
+          resolve();
+        };
+        audio.onerror = (e) => {
+          clearTimeout(timeoutId);
+          console.error(`[ElevenLabs] Audio load error for chunk ${index}:`, e);
+          reject(new Error("Audio load failed"));
+        };
         audio.load();
       });
 
@@ -172,35 +261,66 @@ export function useElevenLabsTTS({
         onStart?.();
       }
 
-      item.audio.onended = () => {
+      const audio = item.audio;
+
+      audio.onended = () => {
         item.status = "done";
         isPlayingRef.current = false;
         currentIndexRef.current = currentIdx + 1;
         playNext();
       };
 
-      item.audio.onerror = () => {
+      audio.onerror = (e) => {
+        console.error(`[ElevenLabs] Playback error for chunk ${currentIdx}:`, e);
         item.status = "error";
         isPlayingRef.current = false;
         currentIndexRef.current = currentIdx + 1;
         playNext();
       };
 
-      item.audio.play().catch(err => {
+      // iOS-specific: ensure AudioContext is resumed
+      const audioCtx = getGlobalAudioContext();
+      if (audioCtx && audioCtx.state === "suspended") {
+        audioCtx.resume().catch(() => {});
+      }
+
+      audio.play().catch(err => {
         console.error("[ElevenLabs] Play error:", err);
-        item.status = "error";
-        isPlayingRef.current = false;
-        currentIndexRef.current = currentIdx + 1;
-        playNext();
+        
+        // On iOS, if play fails, try one more time after a short delay
+        if (isIOS()) {
+          console.log("[ElevenLabs] iOS play failed, retrying...");
+          setTimeout(() => {
+            audio.play().catch(retryErr => {
+              console.error("[ElevenLabs] iOS retry failed:", retryErr);
+              item.status = "error";
+              isPlayingRef.current = false;
+              currentIndexRef.current = currentIdx + 1;
+              onError?.("Audio playback blocked on iOS. Please tap the screen and try again.");
+              playNext();
+            });
+          }, 100);
+        } else {
+          item.status = "error";
+          isPlayingRef.current = false;
+          currentIndexRef.current = currentIdx + 1;
+          playNext();
+        }
       });
     } else if (item.status === "error") {
       currentIndexRef.current = currentIdx + 1;
       playNext();
     }
-  }, [onStart, onEnd]);
+  }, [onStart, onEnd, onError]);
 
   const queueChunk = useCallback((text: string, language: string = "en-IN") => {
     if (!text) return;
+    
+    // Unlock iOS audio on first chunk (this should be called from user gesture context)
+    if (isIOS() && !iosUnlockedRef.current) {
+      unlockIOSAudio();
+      iosUnlockedRef.current = true;
+    }
     
     languageRef.current = language;
     pendingTextRef.current += text;
@@ -279,6 +399,7 @@ export function useElevenLabsTTS({
 
   const reset = useCallback(() => {
     stop();
+    iosUnlockedRef.current = false;
   }, [stop]);
 
   return {
