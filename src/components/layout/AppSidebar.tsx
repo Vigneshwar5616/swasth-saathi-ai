@@ -175,10 +175,6 @@ export function AppSidebar() {
                   <User className="w-4 h-4 mr-2" />
                   Profile Settings
                 </DropdownMenuItem>
-                <DropdownMenuItem onClick={() => navigate("/settings")}>
-                  <Settings className="w-4 h-4 mr-2" />
-                  Preferences
-                </DropdownMenuItem>
                 {isAdminMode && (
                   <>
                     <DropdownMenuSeparator />
