@@ -311,6 +311,11 @@ const Index = () => {
     const text = input.trim();
     if (!text) return;
     
+    // Stop microphone if it's listening
+    if (isListening || isConnecting) {
+      stopSpeech();
+    }
+    
     // Reset TTS for new message
     resetTTS();
     
