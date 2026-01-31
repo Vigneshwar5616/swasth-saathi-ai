@@ -1,15 +1,16 @@
 import { useEffect, useState } from "react";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Card, CardContent, CardHeader } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { AppSidebar } from "@/components/layout/AppSidebar";
 import { SidebarTrigger } from "@/components/ui/sidebar";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/contexts/AuthContext";
 import { useNavigate } from "react-router-dom";
-import { MessageCircle, Calendar, Trash2, Search, Loader2 } from "lucide-react";
+import { MessageCircle, Calendar, Trash2, Search, Loader2, Eye } from "lucide-react";
 import { Input } from "@/components/ui/input";
 import { format } from "date-fns";
 import { useToast } from "@/hooks/use-toast";
+import { ConversationDialog } from "@/components/history/ConversationDialog";
 
 interface Conversation {
   id: string;
@@ -27,6 +28,8 @@ const History = () => {
   const [loading, setLoading] = useState(true);
   const [searchQuery, setSearchQuery] = useState("");
   const [deletingId, setDeletingId] = useState<string | null>(null);
+  const [selectedConversation, setSelectedConversation] = useState<Conversation | null>(null);
+  const [dialogOpen, setDialogOpen] = useState(false);
 
   useEffect(() => {
     if (!user) {
@@ -152,7 +155,14 @@ const History = () => {
               </p>
               
               {filteredConversations.map((conversation) => (
-                <Card key={conversation.id} className="overflow-hidden hover:shadow-md transition-shadow">
+                <Card 
+                  key={conversation.id} 
+                  className="overflow-hidden hover:shadow-md transition-shadow cursor-pointer group"
+                  onClick={() => {
+                    setSelectedConversation(conversation);
+                    setDialogOpen(true);
+                  }}
+                >
                   <CardHeader className="pb-2">
                     <div className="flex items-start justify-between gap-2">
                       <div className="flex items-center gap-2 text-xs text-muted-foreground flex-wrap">
@@ -162,19 +172,36 @@ const History = () => {
                           {getLanguageLabel(conversation.language)}
                         </span>
                       </div>
-                      <Button
-                        variant="ghost"
-                        size="icon"
-                        className="h-8 w-8 text-muted-foreground hover:text-destructive shrink-0"
-                        onClick={() => deleteConversation(conversation.id)}
-                        disabled={deletingId === conversation.id}
-                      >
-                        {deletingId === conversation.id ? (
-                          <Loader2 className="h-4 w-4 animate-spin" />
-                        ) : (
-                          <Trash2 className="h-4 w-4" />
-                        )}
-                      </Button>
+                      <div className="flex items-center gap-1">
+                        <Button
+                          variant="ghost"
+                          size="icon"
+                          className="h-8 w-8 text-muted-foreground hover:text-primary shrink-0 opacity-0 group-hover:opacity-100 transition-opacity"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            setSelectedConversation(conversation);
+                            setDialogOpen(true);
+                          }}
+                        >
+                          <Eye className="h-4 w-4" />
+                        </Button>
+                        <Button
+                          variant="ghost"
+                          size="icon"
+                          className="h-8 w-8 text-muted-foreground hover:text-destructive shrink-0"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            deleteConversation(conversation.id);
+                          }}
+                          disabled={deletingId === conversation.id}
+                        >
+                          {deletingId === conversation.id ? (
+                            <Loader2 className="h-4 w-4 animate-spin" />
+                          ) : (
+                            <Trash2 className="h-4 w-4" />
+                          )}
+                        </Button>
+                      </div>
                     </div>
                   </CardHeader>
                   <CardContent className="space-y-3">
@@ -200,6 +227,13 @@ const History = () => {
             </div>
           )}
         </main>
+
+        <ConversationDialog
+          conversation={selectedConversation}
+          open={dialogOpen}
+          onOpenChange={setDialogOpen}
+          getLanguageLabel={getLanguageLabel}
+        />
       </div>
     </div>
   );
