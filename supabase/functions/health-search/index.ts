@@ -299,8 +299,8 @@ serve(async (req) => {
       throw new Error(`Perplexity API error: ${errorText}`);
     }
 
-    const data = await response.json();
-    const content = data.choices?.[0]?.message?.content;
+    const apiData = await response.json();
+    const content = apiData.choices?.[0]?.message?.content;
     
     let results = [];
     try {
@@ -313,7 +313,7 @@ serve(async (req) => {
     return new Response(
       JSON.stringify({ 
         results,
-        citations: data.citations || []
+        citations: apiData.citations || []
       }),
       { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
     );
