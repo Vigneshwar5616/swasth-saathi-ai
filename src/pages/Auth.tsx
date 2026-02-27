@@ -120,6 +120,11 @@ const Auth = () => {
     setShowConfirmationPending(false);
   };
 
+  const isNetworkIssue = (message?: string) => {
+    const normalized = String(message || "").toLowerCase();
+    return normalized.includes("failed to fetch") || normalized.includes("networkerror") || normalized.includes("network");
+  };
+
   const handleSignIn = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!validateForm()) return;
@@ -131,7 +136,7 @@ const Auth = () => {
     if (error) {
       const isPendingEmail = pendingEmail && email.toLowerCase() === pendingEmail.toLowerCase();
       
-      if (error.message?.includes("Failed to fetch") || error.message?.includes("NetworkError") || error.message?.includes("network")) {
+      if (isNetworkIssue(error.message)) {
         toast({ 
           title: "Connection error", 
           description: "Unable to reach the server. Please check your internet connection and try again.",
@@ -215,20 +220,22 @@ const Auth = () => {
     setLoading(false);
     
     if (error) {
-      if (error.message?.includes("Failed to fetch") || error.message?.includes("NetworkError") || error.message?.includes("network")) {
+      if (isNetworkIssue(error.message)) {
+        // Network may fail after backend already accepted signup. Move user to confirmation flow.
+        storePendingConfirmation(email);
         toast({ 
-          title: "Connection error", 
-          description: "Unable to reach the server. Please check your internet connection and try again.",
-          variant: "destructive" 
+          title: "Connection unstable", 
+          description: "Your account request may still be processed. Check your email, then use Resend if needed.",
         });
-      } else {
-        let message = "Failed to create account. Please try again.";
-        if (error.message?.includes("already registered")) {
-          message = "This email is already registered. Please sign in instead.";
-          setActiveTab("signin");
-        }
-        toast({ title: "Sign up failed", description: message, variant: "destructive" });
+        return;
       }
+
+      let message = "Failed to create account. Please try again.";
+      if (error.message?.includes("already registered")) {
+        message = "This email is already registered. Please sign in instead.";
+        setActiveTab("signin");
+      }
+      toast({ title: "Sign up failed", description: message, variant: "destructive" });
     } else if (session) {
       // Auto-signed in (email confirmation disabled)
       toast({ 
