@@ -131,7 +131,13 @@ const Auth = () => {
     if (error) {
       const isPendingEmail = pendingEmail && email.toLowerCase() === pendingEmail.toLowerCase();
       
-      if (error.message?.includes("Email not confirmed")) {
+      if (error.message?.includes("Failed to fetch") || error.message?.includes("NetworkError") || error.message?.includes("network")) {
+        toast({ 
+          title: "Connection error", 
+          description: "Unable to reach the server. Please check your internet connection and try again.",
+          variant: "destructive" 
+        });
+      } else if (error.message?.includes("Email not confirmed")) {
         storePendingConfirmation(email);
         toast({ 
           title: "Please confirm your email first", 
@@ -140,7 +146,6 @@ const Auth = () => {
         });
         return;
       } else if (error.message?.includes("Invalid login credentials")) {
-        // Supabase returns this for unconfirmed emails too
         if (isPendingEmail) {
           setShowConfirmationPending(true);
           toast({ 
@@ -210,12 +215,20 @@ const Auth = () => {
     setLoading(false);
     
     if (error) {
-      let message = "Failed to create account. Please try again.";
-      if (error.message?.includes("already registered")) {
-        message = "This email is already registered. Please sign in instead.";
-        setActiveTab("signin");
+      if (error.message?.includes("Failed to fetch") || error.message?.includes("NetworkError") || error.message?.includes("network")) {
+        toast({ 
+          title: "Connection error", 
+          description: "Unable to reach the server. Please check your internet connection and try again.",
+          variant: "destructive" 
+        });
+      } else {
+        let message = "Failed to create account. Please try again.";
+        if (error.message?.includes("already registered")) {
+          message = "This email is already registered. Please sign in instead.";
+          setActiveTab("signin");
+        }
+        toast({ title: "Sign up failed", description: message, variant: "destructive" });
       }
-      toast({ title: "Sign up failed", description: message, variant: "destructive" });
     } else if (session) {
       // Auto-signed in (email confirmation disabled)
       toast({ 

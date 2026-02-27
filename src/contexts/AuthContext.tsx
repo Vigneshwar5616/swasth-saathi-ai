@@ -65,44 +65,47 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   }, []);
 
   const signIn = async (email: string, password: string, rememberMe: boolean = true) => {
-    // If not remembering, we'll sign out when the browser closes
-    // Supabase handles this through localStorage vs sessionStorage
     if (!rememberMe) {
-      // Clear any existing session first
       await supabase.auth.signOut();
     }
     
-    const { error } = await supabase.auth.signInWithPassword({
-      email,
-      password,
-    });
-    
-    // If user doesn't want to be remembered, we store a flag
-    if (!error && !rememberMe) {
-      sessionStorage.setItem('session_only', 'true');
-    } else if (!error) {
-      sessionStorage.removeItem('session_only');
+    try {
+      const { error } = await supabase.auth.signInWithPassword({
+        email,
+        password,
+      });
+      
+      if (!error && !rememberMe) {
+        sessionStorage.setItem('session_only', 'true');
+      } else if (!error) {
+        sessionStorage.removeItem('session_only');
+      }
+      
+      return { error };
+    } catch (err: any) {
+      return { error: { message: err?.message || "Failed to fetch" } };
     }
-    
-    return { error };
   };
 
   const signUp = async (email: string, password: string, fullName?: string) => {
     const redirectUrl = getAppRedirectUrl("/");
     
-    const { data, error } = await supabase.auth.signUp({
-      email,
-      password,
-      options: {
-        emailRedirectTo: redirectUrl,
-        data: {
-          full_name: fullName,
+    try {
+      const { data, error } = await supabase.auth.signUp({
+        email,
+        password,
+        options: {
+          emailRedirectTo: redirectUrl,
+          data: {
+            full_name: fullName,
+          },
         },
-      },
-    });
-    
-    // Return session info to check if auto-login happened
-    return { error, session: data?.session };
+      });
+      
+      return { error, session: data?.session };
+    } catch (err: any) {
+      return { error: { message: err?.message || "Failed to fetch" }, session: null };
+    }
   };
 
   const signOut = async () => {
