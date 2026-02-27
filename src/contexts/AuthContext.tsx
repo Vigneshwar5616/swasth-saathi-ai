@@ -64,16 +64,43 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     return () => subscription.unsubscribe();
   }, []);
 
+  const isNetworkError = (error: any) => {
+    const message = String(error?.message || "").toLowerCase();
+    return message.includes("failed to fetch") || message.includes("networkerror") || message.includes("network");
+  };
+
+  const withAuthRetry = async <T,>(operation: () => Promise<T>, retries = 2): Promise<T> => {
+    let lastError: any;
+
+    for (let attempt = 0; attempt <= retries; attempt++) {
+      try {
+        return await operation();
+      } catch (error: any) {
+        lastError = error;
+
+        if (!isNetworkError(error) || attempt === retries) {
+          throw error;
+        }
+
+        await new Promise((resolve) => setTimeout(resolve, 600 * (attempt + 1)));
+      }
+    }
+
+    throw lastError;
+  };
+
   const signIn = async (email: string, password: string, rememberMe: boolean = true) => {
     if (!rememberMe) {
       await supabase.auth.signOut();
     }
     
     try {
-      const { error } = await supabase.auth.signInWithPassword({
-        email,
-        password,
-      });
+      const { error } = await withAuthRetry(() =>
+        supabase.auth.signInWithPassword({
+          email,
+          password,
+        })
+      );
       
       if (!error && !rememberMe) {
         sessionStorage.setItem('session_only', 'true');
@@ -91,16 +118,18 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     const redirectUrl = getAppRedirectUrl("/");
     
     try {
-      const { data, error } = await supabase.auth.signUp({
-        email,
-        password,
-        options: {
-          emailRedirectTo: redirectUrl,
-          data: {
-            full_name: fullName,
+      const { data, error } = await withAuthRetry(() =>
+        supabase.auth.signUp({
+          email,
+          password,
+          options: {
+            emailRedirectTo: redirectUrl,
+            data: {
+              full_name: fullName,
+            },
           },
-        },
-      });
+        })
+      );
       
       return { error, session: data?.session };
     } catch (err: any) {
