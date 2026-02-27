@@ -12,6 +12,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { useToast } from "@/hooks/use-toast";
 import { Heart, Loader2, Mail, Lock, User, CheckCircle2, ArrowLeft } from "lucide-react";
 import { z } from "zod";
+import NetworkDiagnostics from "@/components/auth/NetworkDiagnostics";
 
 const emailSchema = z.string().email("Please enter a valid email address");
 const passwordSchema = z.string().min(6, "Password must be at least 6 characters");
@@ -442,6 +443,8 @@ const Auth = () => {
           <h1 className="text-2xl font-bold">Aarogyasri</h1>
           <p className="text-muted-foreground">Your AI Health Assistant</p>
         </div>
+
+        <NetworkDiagnostics />
 
         <Card>
           <Tabs value={activeTab} onValueChange={setActiveTab}>
