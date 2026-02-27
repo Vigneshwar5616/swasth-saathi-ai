@@ -66,23 +66,29 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   const isNetworkError = (error: any) => {
     const message = String(error?.message || "").toLowerCase();
-    return message.includes("failed to fetch") || message.includes("networkerror") || message.includes("network");
+    return (
+      error?.name === "TypeError" ||
+      message.includes("failed to fetch") ||
+      message.includes("networkerror") ||
+      message.includes("network")
+    );
   };
 
-  const withAuthRetry = async <T,>(operation: () => Promise<T>, retries = 2): Promise<T> => {
+  const withAuthRetry = async <T,>(operation: () => Promise<T>): Promise<T> => {
+    const retryDelaysMs = [800, 1600, 3000];
     let lastError: any;
 
-    for (let attempt = 0; attempt <= retries; attempt++) {
+    for (let attempt = 0; attempt <= retryDelaysMs.length; attempt++) {
       try {
         return await operation();
       } catch (error: any) {
         lastError = error;
 
-        if (!isNetworkError(error) || attempt === retries) {
+        if (!isNetworkError(error) || attempt === retryDelaysMs.length) {
           throw error;
         }
 
-        await new Promise((resolve) => setTimeout(resolve, 600 * (attempt + 1)));
+        await new Promise((resolve) => setTimeout(resolve, retryDelaysMs[attempt]));
       }
     }
 
