@@ -1,44 +1,93 @@
-import { useState, useEffect, useCallback } from "react";
-import { supabase } from "@/integrations/supabase/client";
-import { Wifi, WifiOff, RefreshCw, CheckCircle2, AlertTriangle } from "lucide-react";
+import { useState, useEffect, useCallback, useRef } from "react";
+import { WifiOff, RefreshCw, CheckCircle2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 
 type Status = "checking" | "online" | "offline";
 
+/**
+ * Lightweight connectivity checker for the Auth page.
+ *
+ * Fixes for Safari / iOS:
+ *  - Uses GET (not HEAD) — Safari blocks cross-origin HEAD in some cases.
+ *  - Uses `mode: "cors"` explicitly.
+ *  - Longer timeout (10 s) for slower mobile connections.
+ *  - Falls back to `navigator.onLine` when fetch itself throws.
+ *  - Multiple endpoints tried in sequence for resilience.
+ */
 const NetworkDiagnostics = () => {
   const [status, setStatus] = useState<Status>("checking");
-  const [lastChecked, setLastChecked] = useState<Date | null>(null);
   const [checking, setChecking] = useState(false);
+  const mountedRef = useRef(true);
 
   const checkConnectivity = useCallback(async () => {
     setChecking(true);
     setStatus("checking");
-    try {
-      // Ping the Supabase health endpoint
-      const res = await fetch(
-        `${import.meta.env.VITE_SUPABASE_URL}/rest/v1/`,
-        {
-          method: "HEAD",
+
+    // Quick browser-level check first
+    if (!navigator.onLine) {
+      if (mountedRef.current) {
+        setStatus("offline");
+        setChecking(false);
+      }
+      return;
+    }
+
+    const supabaseUrl = import.meta.env.VITE_SUPABASE_URL;
+    const apiKey = import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY;
+
+    // Try multiple lightweight endpoints — if ANY succeeds we're online
+    const endpoints = [
+      // Auth health check (most reliable across browsers)
+      `${supabaseUrl}/auth/v1/health`,
+      // REST root
+      `${supabaseUrl}/rest/v1/`,
+    ];
+
+    let reachable = false;
+
+    for (const url of endpoints) {
+      try {
+        const controller = new AbortController();
+        const timer = setTimeout(() => controller.abort(), 10_000);
+
+        const res = await fetch(url, {
+          method: "GET",
+          mode: "cors",
+          cache: "no-store",
           headers: {
-            apikey: import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY,
+            apikey: apiKey,
+            Accept: "application/json",
           },
-          signal: AbortSignal.timeout(6000),
+          signal: controller.signal,
+        });
+
+        clearTimeout(timer);
+
+        if (res.ok || res.status === 401 || res.status === 406) {
+          // 401/406 still means the server responded — network is fine
+          reachable = true;
+          break;
         }
-      );
-      setStatus(res.ok ? "online" : "offline");
-    } catch {
-      setStatus("offline");
-    } finally {
-      setLastChecked(new Date());
+      } catch {
+        // Try next endpoint
+      }
+    }
+
+    if (mountedRef.current) {
+      setStatus(reachable ? "online" : "offline");
       setChecking(false);
     }
   }, []);
 
   useEffect(() => {
+    mountedRef.current = true;
     checkConnectivity();
-    const interval = setInterval(checkConnectivity, 30000);
-    return () => clearInterval(interval);
+    const interval = setInterval(checkConnectivity, 30_000);
+    return () => {
+      mountedRef.current = false;
+      clearInterval(interval);
+    };
   }, [checkConnectivity]);
 
   // Listen for browser online/offline events
@@ -53,7 +102,7 @@ const NetworkDiagnostics = () => {
     };
   }, [checkConnectivity]);
 
-  if (status === "online" && !checking) return null; // Hide when healthy
+  if (status === "online" && !checking) return null;
 
   const statusConfig = {
     checking: {
