@@ -260,15 +260,15 @@ const Index = () => {
   const fetchWithRetry = async (
     url: string, 
     options: RequestInit, 
-    maxRetries = 3, 
-    baseDelay = 1000
+    maxRetries = 2, 
+    baseDelay = 500
   ): Promise<Response> => {
     let lastError: Error | null = null;
     
     for (let attempt = 0; attempt < maxRetries; attempt++) {
       try {
         const controller = new AbortController();
-        const timeoutId = setTimeout(() => controller.abort(), 30000); // 30s timeout
+        const timeoutId = setTimeout(() => controller.abort(), 20000); // 20s timeout
         
         const response = await fetch(url, {
           ...options,
