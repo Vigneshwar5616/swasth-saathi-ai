@@ -129,7 +129,7 @@ export function useSpeechSynthesis({
 
     let retryCount = 0;
     const maxRetries = 5;
-    let retryTimeout: NodeJS.Timeout | null = null;
+    let retryTimeout: ReturnType<typeof setTimeout> | null = null;
 
     const loadVoices = () => {
       const availableVoices = synth.getVoices();
