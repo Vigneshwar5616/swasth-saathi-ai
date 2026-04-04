@@ -17,10 +17,9 @@ export function ProtectedRoute({ children }: ProtectedRouteProps) {
     );
   }
 
-  // Temporarily bypass auth for preview
-  // if (!user) {
-  //   return <Navigate to="/auth" replace />;
-  // }
+  if (!user) {
+    return <Navigate to="/auth" replace />;
+  }
 
   return <>{children}</>;
 }
