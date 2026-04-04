@@ -110,7 +110,7 @@ export function useSpeechSynthesis({
   const onFallbackRef = useRef(onFallback);
   
   // Keep iOS speech synthesis alive - it pauses when tab loses focus
-  const keepAliveIntervalRef = useRef<NodeJS.Timeout | null>(null);
+  const keepAliveIntervalRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   
   const synth = typeof window !== "undefined" ? window.speechSynthesis : null;
   const isSupported = !!synth && typeof synth.speak === "function";
