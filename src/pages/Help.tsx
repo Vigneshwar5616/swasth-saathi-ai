@@ -1,4 +1,3 @@
-import { AppSidebar } from "@/components/layout/AppSidebar";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from "@/components/ui/accordion";
@@ -91,10 +90,8 @@ const Help = () => {
   };
 
   return (
-    <div className="flex h-full w-full overflow-hidden">
-      <AppSidebar />
-      
-      <div className="flex-1 flex flex-col min-h-0 overflow-hidden">
+    <div className="flex flex-col w-full">
+      <div className="flex-1 flex flex-col min-w-0">
         <div className="border-b bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/60">
           <div className="container mx-auto px-6 py-4">
             <div className="flex items-center gap-2">
@@ -105,7 +102,7 @@ const Help = () => {
           </div>
         </div>
         
-        <main className="flex-1 min-h-0 overflow-y-auto overscroll-none container mx-auto p-6 pb-24 space-y-8">
+        <main className="flex-1 container mx-auto p-6 pb-24 space-y-8">
           {/* Contact Card */}
           <Card className="bg-primary/5 border-primary/20">
             <CardHeader>
