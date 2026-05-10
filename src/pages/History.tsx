@@ -1,8 +1,6 @@
 import { useEffect, useState } from "react";
 import { Card, CardContent, CardHeader } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
-import { AppSidebar } from "@/components/layout/AppSidebar";
-import { SidebarTrigger } from "@/components/ui/sidebar";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/contexts/AuthContext";
 import { useNavigate } from "react-router-dom";
@@ -101,15 +99,12 @@ const History = () => {
   }
 
   return (
-    <div className="flex min-h-screen max-h-screen w-full overflow-hidden">
-      <AppSidebar />
-      
-      <div className="flex-1 flex flex-col min-w-0 min-h-0 overflow-hidden">
+    <div className="flex flex-col w-full">
+      <div className="flex-1 flex flex-col min-w-0">
         {/* Header */}
-        <header className="sticky top-0 z-10 border-b border-border bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/60">
-          <div className="flex h-14 items-center gap-4 px-4 md:px-6">
-            <SidebarTrigger className="md:hidden" />
-            <h1 className="text-lg md:text-xl font-semibold truncate">Chat History</h1>
+        <header className="sticky top-0 z-10 border-b border-border bg-background/95 backdrop-blur">
+          <div className="flex h-14 items-center gap-3 px-4">
+            <h1 className="text-lg font-semibold truncate">Chat History</h1>
             <div className="flex-1" />
             <div className="relative w-full max-w-xs">
               <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />

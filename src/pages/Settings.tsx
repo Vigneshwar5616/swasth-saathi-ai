@@ -1,6 +1,5 @@
 import { useState, useEffect } from "react";
 import { useNavigate } from "react-router-dom";
-import { AppSidebar } from "@/components/layout/AppSidebar";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -531,8 +530,7 @@ const Settings = () => {
 
   if (authLoading || loading) {
     return (
-      <div className="flex min-h-screen max-h-screen w-full overflow-hidden">
-        <AppSidebar />
+      <div className="flex w-full">
         <div className="flex-1 flex items-center justify-center">
           <Loader2 className="h-8 w-8 animate-spin text-primary" />
         </div>
@@ -541,10 +539,8 @@ const Settings = () => {
   }
 
   return (
-    <div className="flex min-h-screen max-h-screen w-full overflow-hidden">
-      <AppSidebar />
-      
-      <div className="flex-1 flex flex-col min-h-0 overflow-hidden">
+    <div className="flex flex-col w-full">
+      <div className="flex-1 flex flex-col min-w-0">
         <div className="border-b bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/60">
           <div className="container mx-auto px-6 py-4 flex items-center justify-between">
             <div>
